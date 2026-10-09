@@ -24,7 +24,7 @@ Both agents run under the owner's `gh` identity, so GitHub can't tell them apart
 | Role | Profile | May | Denied |
 | --- | --- | --- | --- |
 | Author | `.claude/settings.json` (loads automatically) | edit, commit, push feature branches, open PRs | `gh pr merge`, merge via `gh api`, push to `main`, force-push, `push --all/--mirror` |
-| Reviewer | `.claude/reviewer-settings.json` | read PRs/issues/CI, COMMENT reviews with line comments (`gh api .../pulls/<n>/reviews`), close, `gh pr merge <n> --squash` | file edits, commits, any push, `--admin`, merge via `gh api` |
+| Reviewer | `.claude/reviewer-settings.json` | read PRs/issues/CI, COMMENT reviews with line comments (`gh api .../pulls/<n>/reviews`), close, `gh pr merge <n> --squash` | file edits, commits, any push, `--admin`, `--auto`, approve/request-changes (`gh pr review --approve/-a`, `--request-changes/-r`), merge via `gh api` |
 
 Launch the reviewer from the repo root:
 
@@ -36,17 +36,20 @@ Why this shape:
 
 - Permission rules from every loaded settings file merge, and deny beats allow. With `--settings` alone, the author profile's `gh pr merge` deny still loads and blocks the reviewer. `--setting-sources user,local` skips the project `.claude/settings.json`.
 - Skipping project settings also skips project skills, so `/review-pr` isn't available in that session. The prompt points the reviewer at the skill file instead.
+- The three merge-via-`gh api` denies appear in both profiles because the reviewer session doesn't load `.claude/settings.json`. Keep the two blocks in sync.
+- The `gh api` allow rule and the skill hardcode `novotl/inflation-station` on purpose: it scopes the allow rule to this repo's reviews endpoint.
 
-Rules match command text, so they stop the forms an agent normally writes, not every possible spelling (`git -C . push origin main`, `bash -c '...'`). The ruleset is the hard boundary. A plain `git push` while checked out on `main` is also not caught client-side; the ruleset rejects it.
+Rules match command text, so they stop the forms an agent normally writes, not every possible spelling (`git -C . push origin main`, `bash -c '...'`). The ruleset is the hard boundary. A plain `git push` while checked out on `main` is also not caught client-side; the ruleset rejects it. A `gh api .../reviews` call could still request `APPROVE`; matching that word would also deny reviews that merely mention it, so GitHub's rejection of self-approval is the backstop. The rules match the whole command text, heredoc included, so a review body that quotes an API merge path is denied too; reviews must not quote one.
 
 ## Guardrail paths
 
 The reviewer leaves these PRs for a human to merge, with a comment saying so:
 
 - `.claude/**`, `.github/**`, `CLAUDE.md`, `.pre-commit-config.yaml`
-- dependency changes in `pyproject.toml` or `uv.lock`
+- any `uv.lock` change
+- changes to `dependencies`, `dependency-groups` or `build-system` in `pyproject.toml`
 
-A PR that touches these can weaken the guardrails themselves, so the owner reviews and merges it.
+A PR that touches these can weaken the guardrails themselves, so the owner reviews and merges it. This list is canonical; `.claude/skills/review-pr/SKILL.md` repeats it and must match.
 
 ## Future
 

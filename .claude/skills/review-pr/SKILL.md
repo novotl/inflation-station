@@ -14,11 +14,11 @@ You are the **review agent**. You run under the reviewer profile (`docs/agents/b
 ## 1. Gather
 
 ```sh
-gh pr view <n> --json number,title,body,baseRefName,headRefName,files,closingIssuesReferences,statusCheckRollup
+gh pr view <n> --json number,title,body,baseRefName,headRefName,files,statusCheckRollup
 git fetch origin <base> pull/<n>/head:refs/pr/<n>
 ```
 
-- The **spec** is the linked issue (`closingIssuesReferences`, or `#N` in the body): read it with `gh issue view <issue> --comments`. No linked issue: the PR body is the spec.
+- The **spec** is the issue referenced as `#N` (e.g. `Closes #N`) in the PR body or commit messages: read it with `gh issue view <N> --comments`. No referenced issue: the PR body is the spec.
 - The **standards** are `CLAUDE.md`, `docs/agents/*.md`, `CONTEXT.md` and `docs/adr/` (when present), and the quality gate in `.pre-commit-config.yaml` / `pyproject.toml`.
 
 Done when `refs/pr/<n>` exists and you have the spec and the list of standards files.
@@ -50,7 +50,7 @@ Done when every changed file has been checked against both buckets.
 
 ## 3. Post the review
 
-Post one review: a summary body plus a line comment for every finding that points at a line in the diff.
+Post one review: a summary body plus a line comment for every finding that points at a line in the diff. The repo is hardcoded on purpose: the reviewer profile allows `gh api` only for this repo's reviews endpoint.
 
 ```sh
 gh api repos/novotl/inflation-station/pulls/<n>/reviews --input - <<'EOF'
@@ -71,6 +71,7 @@ EOF
 - **Line comments** repeat a finding at its line, tagged with its bucket and axis, with the concrete fix. `line` is the line number in the PR's version of the file, and it must be inside a diff hunk. Use `start_line` for a range.
 - A finding with no line in the diff (a missing test, a missing spec requirement) goes only in the summary.
 - If GitHub answers `422`, a comment points outside the diff. Move that finding into the summary only and post again.
+- Don't write API merge paths (`pulls/<n>/` followed by `merge`) in review text. The deny rule matches the whole command, heredoc included, and blocks the post.
 
 ## 4. Decide
 
@@ -78,7 +79,7 @@ Check in this order; the first match wins.
 
 1. **Fundamentally wrong** (solves the wrong problem, superseded, or the approach can't be fixed by revision): `gh pr close <n> --comment "<why, and what to do instead>"`. Reserve this for PRs no revision can save; everything else is blocking findings.
 2. **Blocking findings**: stop. The review from step 3 is the hand-off to the author.
-3. **Guardrail path touched**: any changed file matches `.claude/**`, `.github/**`, `CLAUDE.md`, `.pre-commit-config.yaml`, or the PR changes dependencies in `pyproject.toml` or `uv.lock` (any `uv.lock` change, or a change to `dependencies`, `dependency-groups`, `build-system` in `pyproject.toml`). Check with `gh pr view <n> --json files --jq '.files[].path'`. Comment `A human must merge this PR: it touches guardrail files (<list>).` and stop.
+3. **Guardrail path touched**: any changed file matches `.claude/**`, `.github/**`, `CLAUDE.md`, `.pre-commit-config.yaml`, or the PR changes `uv.lock` (any change) or `dependencies`, `dependency-groups`, `build-system` in `pyproject.toml`. This list mirrors "Guardrail paths" in `docs/agents/branch-protection.md`, which is canonical. Check with `gh pr view <n> --json files --jq '.files[].path'`. Comment `A human must merge this PR: it touches guardrail files (<list>).` and stop.
 4. **CI not green**: `gh pr checks <n>`. Pending: wait with `gh pr checks <n> --watch`, then re-check. Failing: comment with the failing check and stop.
 5. **Otherwise merge**: `gh pr merge <n> --squash --delete-branch`. Squash is the only merge method; the server-side ruleset is the authority on whether the merge may happen, so when it refuses, comment the error and stop.
 
