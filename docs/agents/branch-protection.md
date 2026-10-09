@@ -24,7 +24,7 @@ Both agents run under the owner's `gh` identity, so GitHub can't tell them apart
 | Role | Profile | May | Denied |
 | --- | --- | --- | --- |
 | Author | `.claude/settings.json` (loads automatically) | edit, commit, push feature branches, open PRs | `gh pr merge`, merge via `gh api`, push to `main`, force-push, `push --all/--mirror` |
-| Reviewer | `.claude/reviewer-settings.json` | read PRs/issues/CI, COMMENT reviews, close, `gh pr merge <n> --squash` | file edits, commits, any push, `--admin`, merge via `gh api` |
+| Reviewer | `.claude/reviewer-settings.json` | read PRs/issues/CI, COMMENT reviews with line comments (`gh api .../pulls/<n>/reviews`), close, `gh pr merge <n> --squash` | file edits, commits, any push, `--admin`, merge via `gh api` |
 
 Launch the reviewer from the repo root:
 

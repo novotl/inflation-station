@@ -15,17 +15,26 @@ You are the **review agent**. You run under the reviewer profile (`docs/agents/b
 
 ```sh
 gh pr view <n> --json number,title,body,baseRefName,headRefName,files,closingIssuesReferences,statusCheckRollup
-gh pr diff <n>
+git fetch origin <base> pull/<n>/head:refs/pr/<n>
 ```
 
 - The **spec** is the linked issue (`closingIssuesReferences`, or `#N` in the body): read it with `gh issue view <issue> --comments`. No linked issue: the PR body is the spec.
 - The **standards** are `CLAUDE.md`, `docs/agents/*.md`, `CONTEXT.md` and `docs/adr/` (when present), and the quality gate in `.pre-commit-config.yaml` / `pyproject.toml`.
 
-Done when you have read the whole diff, the spec, and the standards that touch the changed files.
+Done when `refs/pr/<n>` exists and you have the spec and the list of standards files.
 
 ## 2. Review
 
-Sort every finding into one of two buckets.
+Run the `mattpocock-skills:code-review` skill with these inputs, so it never has to ask:
+
+- **Fixed point**: `origin/<base>`.
+- **Tip**: `refs/pr/<n>` wherever the skill says `HEAD`. The diff is `git diff origin/<base>...refs/pr/<n>`, commits `git log origin/<base>..refs/pr/<n> --oneline`. Don't check out the PR branch.
+- **Spec**: the issue or PR body from step 1.
+- **Standards**: the files from step 1.
+
+Its Standards and Spec reports cover only part of what blocks a merge. Then read the diff yourself for correctness bugs, missing tests and security problems.
+
+Sort every finding, from the skill and your own pass, into one of two buckets.
 
 **Blocking** (any one stops the merge):
 
@@ -35,17 +44,33 @@ Sort every finding into one of two buckets.
 - A security problem: secrets, credentials or files from `data/` committed, unsafe input handling.
 - A documented standard or ADR violated without the PR saying why.
 
-**Non-blocking**: naming, style the linters don't enforce, small refactors, follow-up ideas. Report them; they never stop a merge.
+**Non-blocking**: naming, style the linters don't enforce, small refactors, follow-up ideas, and the skill's baseline smells (they are judgement calls). Report them; they never stop a merge.
 
 Done when every changed file has been checked against both buckets.
 
 ## 3. Post the review
 
+Post one review: a summary body plus a line comment for every finding that points at a line in the diff.
+
 ```sh
-gh pr review <n> --comment --body "<review>"
+gh api repos/novotl/inflation-station/pulls/<n>/reviews --input - <<'EOF'
+{
+  "commit_id": "<git rev-parse refs/pr/<n>>",
+  "event": "COMMENT",
+  "body": "<summary>",
+  "comments": [
+    {"path": "src/inflation_station/foo.py", "line": 42, "side": "RIGHT", "body": "**blocking** (Spec): <finding and concrete fix>"},
+    {"path": "src/inflation_station/foo.py", "start_line": 10, "line": 14, "side": "RIGHT", "body": "**non-blocking** (Standards): <finding and concrete fix>"}
+  ]
+}
+EOF
 ```
 
-Start the body with one verdict line: `Verdict: ready to merge`, `Verdict: blocking issues`, or `Verdict: needs human merge`. Then list blocking findings, then non-blocking ones, each with `file:line` and a concrete fix.
+- `event` is always `COMMENT`.
+- The **summary** starts with one verdict line: `Verdict: ready to merge`, `Verdict: blocking issues`, or `Verdict: needs human merge`. Then the skill's `## Standards` and `## Spec` sections, plus `## Correctness` for your own pass. Keep the axes separate and list every finding there, marked **blocking** or **non-blocking**, with `file:line`.
+- **Line comments** repeat a finding at its line, tagged with its bucket and axis, with the concrete fix. `line` is the line number in the PR's version of the file, and it must be inside a diff hunk. Use `start_line` for a range.
+- A finding with no line in the diff (a missing test, a missing spec requirement) goes only in the summary.
+- If GitHub answers `422`, a comment points outside the diff. Move that finding into the summary only and post again.
 
 ## 4. Decide
 
