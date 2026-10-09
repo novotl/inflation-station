@@ -72,6 +72,7 @@ EOF
 - A finding with no line in the diff (a missing test, a missing spec requirement) goes only in the summary.
 - If GitHub answers `422`, a comment points outside the diff. Move that finding into the summary only and post again.
 - Don't write `/merge` followed by a space in review text (e.g. an API merge path). The merge denies match a path ending in `/merge` anywhere in the command, heredoc included, and block the post. `docs/agents/branch-protection.md` repeats this caveat; keep the two in sync.
+- Don't write `APPROVE` or `REQUEST_CHANGES` in review text. The approval denies match either word anywhere in the command and block the post. Write "approve" or "request changes" instead.
 
 ## 4. Decide
 

@@ -24,7 +24,7 @@ Both agents run under the owner's `gh` identity, so GitHub can't tell them apart
 | Role | Profile | May | Denied |
 | --- | --- | --- | --- |
 | Author | `.claude/settings.json` (loads automatically) | edit, commit, push feature branches, open PRs | `gh pr merge`, merge via `gh api`, push to `main`, force-push, `push --all/--mirror` |
-| Reviewer | `.claude/reviewer-settings.json` | read PRs/issues/CI, COMMENT reviews with line comments (`gh api .../pulls/<n>/reviews`), close, `gh pr merge <n> --squash` | file edits, commits, any push, `--admin`, `--auto`, approve/request-changes (`gh pr review --approve/-a`, `--request-changes/-r`), merge via `gh api` |
+| Reviewer | `.claude/reviewer-settings.json` | read PRs/issues/CI, COMMENT reviews with line comments (`gh api .../pulls/<n>/reviews`), close, `gh pr merge <n> --squash` | file edits, commits, any push, `--admin`, `--auto`, approve/request-changes (`gh pr review --approve/-a`, `--request-changes/-r`, `gh api` with `APPROVE`/`REQUEST_CHANGES`), merge via `gh api` |
 
 Launch the reviewer from the repo root:
 
@@ -39,7 +39,7 @@ Why this shape:
 - The three merge-via-`gh api` denies appear in both profiles because the reviewer session doesn't load `.claude/settings.json`. Keep the two blocks in sync.
 - The `gh api` allow rule and the skill hardcode `novotl/inflation-station` on purpose: it scopes the allow rule to this repo's reviews endpoint.
 
-Rules match command text, so they stop the forms an agent normally writes, not every possible spelling (`git -C . push origin main`, `bash -c '...'`). The ruleset is the hard boundary. A plain `git push` while checked out on `main` is also not caught client-side; the ruleset rejects it. A `gh api .../reviews` call could still request `APPROVE`; matching that word would also deny reviews that merely mention it, so GitHub's rejection of self-approval is the backstop. The merge-via-`gh api` denies are anchored to a path that ends in `/merge` (`gh api *pulls/*/merge` and `gh api *pulls/*/merge *`), because rules match the whole command text, heredoc included. A review that mentions `src/merge.py` or a `merge-x` branch posts fine, but one whose text contains `/merge` followed by a space (e.g. quoting an API merge path) is denied. `SKILL.md` repeats this caveat; keep the two in sync.
+Rules match command text, so they stop the forms an agent normally writes, not every possible spelling (`git -C . push origin main`, `bash -c '...'`). The ruleset is the hard boundary. A plain `git push` while checked out on `main` is also not caught client-side; the ruleset rejects it. The reviewer also denies `gh api *APPROVE*` and `gh api *REQUEST_CHANGES*`, so a `gh api .../reviews` call can't request either event. The trade-off: a review whose text contains either word is denied too, and the reviewer must reword it. GitHub's rejection of self-approval stays the backstop for spellings the rules miss. The merge-via-`gh api` denies are anchored to a path that ends in `/merge` (`gh api *pulls/*/merge` and `gh api *pulls/*/merge *`), because rules match the whole command text, heredoc included. A review that mentions `src/merge.py` or a `merge-x` branch posts fine, but one whose text contains `/merge` followed by a space (e.g. quoting an API merge path) is denied. `SKILL.md` repeats this caveat; keep the two in sync.
 
 ## Guardrail paths
 

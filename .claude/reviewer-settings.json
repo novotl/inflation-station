@@ -37,6 +37,8 @@
       "Bash(gh pr review * -r *)",
       "Bash(gh pr review -a *)",
       "Bash(gh pr review -r *)",
+      "Bash(gh api *APPROVE*)",
+      "Bash(gh api *REQUEST_CHANGES*)",
       "Bash(gh api *pulls/*/merge)",
       "Bash(gh api *pulls/*/merge *)",
       "Bash(gh api graphql *mergePullRequest*)",
