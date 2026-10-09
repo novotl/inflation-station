@@ -15,7 +15,7 @@ You are the **review agent**. You run under the reviewer profile (`docs/agents/b
 
 ```sh
 gh pr view <n> --json number,title,body,baseRefName,headRefName,files,statusCheckRollup
-git fetch origin <base> pull/<n>/head:refs/pr/<n>
+git fetch origin <base> +pull/<n>/head:refs/pr/<n>
 ```
 
 - The **spec** is the issue referenced as `#N` (e.g. `Closes #N`) in the PR body or commit messages: read it with `gh issue view <N> --comments`. No referenced issue: the PR body is the spec.
@@ -73,6 +73,7 @@ EOF
 - If GitHub answers `422`, a comment points outside the diff. Move that finding into the summary only and post again.
 - Don't write `/merge` followed by a space in review text (e.g. an API merge path). The merge denies match a path ending in `/merge` anywhere in the command, heredoc included, and block the post. `docs/agents/branch-protection.md` repeats this caveat; keep the two in sync.
 - Don't write `APPROVE` or `REQUEST_CHANGES` in review text. The approval denies match either word anywhere in the command and block the post. Write "approve" or "request changes" instead.
+- Don't write `/rulesets` or `/protection` in review text (e.g. a rulesets or branch-protection API path). The ruleset denies (`gh api *repos/*/rulesets*`, `gh api *branches/*/protection*`) match anywhere in the command, heredoc included, and every post already contains `repos/` and may contain `branches/`. A file name like `branch-protection.md` is fine. `docs/agents/branch-protection.md` repeats this caveat; keep the two in sync.
 
 ## 4. Decide
 

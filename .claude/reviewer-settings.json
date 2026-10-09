@@ -26,6 +26,7 @@
       "Write",
       "NotebookEdit",
       "Bash(git commit *)",
+      "Bash(git push)",
       "Bash(git push *)",
       "Bash(gh pr merge *--admin*)",
       "Bash(gh pr merge *--auto*)",
@@ -42,7 +43,9 @@
       "Bash(gh api *pulls/*/merge)",
       "Bash(gh api *pulls/*/merge *)",
       "Bash(gh api graphql *mergePullRequest*)",
-      "Bash(gh api graphql *enablePullRequestAutoMerge*)"
+      "Bash(gh api graphql *enablePullRequestAutoMerge*)",
+      "Bash(gh api *repos/*/rulesets*)",
+      "Bash(gh api *branches/*/protection*)"
     ]
   }
 }

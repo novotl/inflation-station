@@ -16,4 +16,4 @@ Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/
 
 ### Branch protection
 
-Agents run as an author (default) or reviewer profile; only the reviewer merges, never `main` pushes or force-pushes. Before merging, pushing, or touching `.claude/`, see `docs/agents/branch-protection.md`.
+Agents run as an author (default) or reviewer profile; only the reviewer merges (the owner merges PRs that touch guardrail paths), never `main` pushes or force-pushes. Before merging, pushing, or touching `.claude/`, see `docs/agents/branch-protection.md`.
