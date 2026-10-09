@@ -9,3 +9,6 @@ build/
 .coverage
 coverage.xml
 htmlcov/
+
+# Project data (downloads, caches, exports) lives here and is never committed.
+data/

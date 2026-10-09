@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(gh pr view *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr review *)",
+      "Bash(gh pr comment *)",
+      "Bash(gh pr close *)",
+      "Bash(gh pr merge * --squash)",
+      "Bash(gh pr merge * --squash *)",
+      "Bash(gh issue view *)",
+      "Bash(gh run view *)",
+      "Bash(gh run list *)",
+      "Bash(git fetch *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)"
+    ],
+    "deny": [
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(gh pr merge *--admin*)",
+      "Bash(gh pr review *--approve*)",
+      "Bash(gh pr review *--request-changes*)",
+      "Bash(gh api *pulls/*/merge*)",
+      "Bash(gh api graphql *mergePullRequest*)",
+      "Bash(gh api graphql *enablePullRequestAutoMerge*)"
+    ]
+  }
+}
