@@ -26,7 +26,7 @@ Both agents run under the owner's `gh` identity, so GitHub can't tell them apart
 | Author | `.claude/settings.json` (loads automatically) | edit, commit, push feature branches, open PRs | `gh pr merge`, merge via `gh api`, push to `main`, force-push, `push --all/--mirror`, rulesets and branch protection via `gh api` |
 | Reviewer | `.claude/reviewer-settings.json` | read PRs/issues/CI, COMMENT reviews with line comments (`gh api .../pulls/<n>/reviews`), close, `gh pr merge <n> --squash` | file edits, commits, any push, `--admin`, `--auto`, approve/request-changes (`gh pr review --approve/-a`, `--request-changes/-r`, `gh api` with `APPROVE`/`REQUEST_CHANGES`), merge via `gh api`, rulesets and branch protection via `gh api` |
 
-Launch the reviewer from the repo root:
+Launch the reviewer with `scripts/review-pr.sh <n>`. It runs, from the repo root:
 
 ```sh
 claude --setting-sources user,local --settings .claude/reviewer-settings.json "Read .claude/skills/review-pr/SKILL.md and follow it for PR <n>"
@@ -35,7 +35,7 @@ claude --setting-sources user,local --settings .claude/reviewer-settings.json "R
 Why this shape:
 
 - Permission rules from every loaded settings file merge, and deny beats allow. With `--settings` alone, the author profile's `gh pr merge` deny still loads and blocks the reviewer. `--setting-sources user,local` skips the project `.claude/settings.json`.
-- Skipping project settings also skips project skills, so `/review-pr` isn't available in that session. The prompt points the reviewer at the skill file instead.
+- Skipping project settings also skips project skills, so `/review-pr` isn't available in that session. The script's prompt points the reviewer at the skill file instead.
 - The merge-via-`gh api` denies and the ruleset denies appear in both profiles because the reviewer session doesn't load `.claude/settings.json`. Keep the two blocks in sync.
 - The `gh api` allow rule and the skill hardcode `novotl/inflation-station` on purpose: it scopes the allow rule to this repo's reviews endpoint.
 
