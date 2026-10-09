@@ -71,7 +71,7 @@ EOF
 - **Line comments** repeat a finding at its line, tagged with its bucket and axis, with the concrete fix. `line` is the line number in the PR's version of the file, and it must be inside a diff hunk. Use `start_line` for a range.
 - A finding with no line in the diff (a missing test, a missing spec requirement) goes only in the summary.
 - If GitHub answers `422`, a comment points outside the diff. Move that finding into the summary only and post again.
-- Don't write API merge paths (`pulls/<n>/` followed by `merge`) in review text. The deny rule matches the whole command, heredoc included, and blocks the post.
+- Don't write `/merge` followed by a space in review text (e.g. an API merge path). The merge denies match a path ending in `/merge` anywhere in the command, heredoc included, and block the post. `docs/agents/branch-protection.md` repeats this caveat; keep the two in sync.
 
 ## 4. Decide
 
