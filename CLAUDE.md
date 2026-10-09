@@ -13,3 +13,7 @@ Uses the five default labels: needs-triage, needs-info, ready-for-agent, ready-f
 ### Domain docs
 
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Branch protection
+
+Agents run as an author (default) or reviewer profile; only the reviewer merges (the owner merges PRs that touch guardrail paths), never `main` pushes or force-pushes. Before merging, pushing, or touching `.claude/`, see `docs/agents/branch-protection.md`.

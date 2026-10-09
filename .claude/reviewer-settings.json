@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(gh pr view *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr review *)",
+      "Bash(gh pr comment *)",
+      "Bash(gh pr close *)",
+      "Bash(gh pr merge * --squash)",
+      "Bash(gh pr merge * --squash *)",
+      "Bash(gh issue view *)",
+      "Bash(gh run view *)",
+      "Bash(gh run list *)",
+      "Bash(git fetch *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git rev-parse *)",
+      "Bash(gh api repos/novotl/inflation-station/pulls/*/reviews *)"
+    ],
+    "deny": [
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "Bash(git commit *)",
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(gh pr merge *--admin*)",
+      "Bash(gh pr merge *--auto*)",
+      "Bash(gh pr review *--approve*)",
+      "Bash(gh pr review *--request-changes*)",
+      "Bash(gh pr review * -a)",
+      "Bash(gh pr review * -a *)",
+      "Bash(gh pr review * -r)",
+      "Bash(gh pr review * -r *)",
+      "Bash(gh pr review -a *)",
+      "Bash(gh pr review -r *)",
+      "Bash(gh api *APPROVE*)",
+      "Bash(gh api *REQUEST_CHANGES*)",
+      "Bash(gh api *pulls/*/merge)",
+      "Bash(gh api *pulls/*/merge *)",
+      "Bash(gh api graphql *mergePullRequest*)",
+      "Bash(gh api graphql *enablePullRequestAutoMerge*)",
+      "Bash(gh api *repos/*/rulesets*)",
+      "Bash(gh api *branches/*/protection*)"
+    ]
+  }
+}
