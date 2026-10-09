@@ -1,0 +1,51 @@
+[project]
+name = "inflation-station"
+version = "0.1.0"
+description = "Track investment performance against inflation."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+inflation-station = "inflation_station:main"
+
+[build-system]
+requires = ["uv_build>=0.12.24,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "deptry>=0.25.1",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.10",
+    "ty>=0.0.85",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812", # conflicts with the formatter
+    "ISC001", # conflicts with the formatter
+    "D",      # docstrings not enforced yet
+    "CPY",    # no license, so no copyright headers
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",   # asserts are how pytest works
+    "INP001", # tests/ is intentionally not a package
+]
+
+[tool.ty.terminal]
+error-on-warning = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "--cov=inflation_station", "--cov-report=term-missing"]
+xfail_strict = true
+filterwarnings = ["error"]
