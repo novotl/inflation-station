@@ -12,6 +12,7 @@ from sqlalchemy.pool import NullPool
 from sqlalchemy.types import TypeDecorator
 
 from inflation_station.fund_price import FundPrice
+from inflation_station.fx_rate import FxRate
 from inflation_station.purchase import Purchase
 
 if TYPE_CHECKING:
@@ -95,6 +96,16 @@ class FundPriceRecord(Base):
     currency: Mapped[str]
 
 
+class FxRateRecord(Base):
+    __tablename__ = "fx_rate"
+    __table_args__ = (UniqueConstraint("currency", "day"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    currency: Mapped[str]
+    day: Mapped[date]
+    czk_per_unit: Mapped[Decimal]
+
+
 @dataclass(frozen=True)
 class Added:
     added: int
@@ -170,6 +181,26 @@ class Store:
                 added += 1
         return Added(added=added, already_present=already_present)
 
+    def add_fx_rates(self, rates: Iterable[FxRate]) -> Added:
+        """Adds the rates not stored yet. A stored rate is kept, even if `rates` has a different one that day."""
+        rates = list(rates)
+        with Session(self._engine) as session, session.begin():
+            stored = session.execute(
+                select(FxRateRecord.currency, FxRateRecord.day).where(
+                    FxRateRecord.currency.in_({r.currency for r in rates})
+                )
+            )
+            seen = {tuple(row) for row in stored}
+            added = already_present = 0
+            for rate in rates:
+                if (rate.currency, rate.day) in seen:
+                    already_present += 1
+                    continue
+                seen.add((rate.currency, rate.day))
+                session.add(FxRateRecord(currency=rate.currency, day=rate.day, czk_per_unit=rate.czk_per_unit))
+                added += 1
+        return Added(added=added, already_present=already_present)
+
     def purchases(self) -> list[Purchase]:
         with Session(self._engine) as session:
             return [_purchase(record) for record in session.scalars(select(PurchaseRecord))]
@@ -179,6 +210,13 @@ class Store:
             return [
                 FundPrice(isin=r.isin, day=r.day, price=r.price, currency=r.currency)
                 for r in session.scalars(select(FundPriceRecord))
+            ]
+
+    def fx_rates(self) -> list[FxRate]:
+        with Session(self._engine) as session:
+            return [
+                FxRate(currency=r.currency, day=r.day, czk_per_unit=r.czk_per_unit)
+                for r in session.scalars(select(FxRateRecord))
             ]
 
 

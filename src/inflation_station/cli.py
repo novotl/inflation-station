@@ -3,15 +3,17 @@ from typing import TYPE_CHECKING
 
 import click
 
-from inflation_station import clock, conseq, jt
+from inflation_station import clock, cnb, conseq, jt
 from inflation_station.chart import write_chart
 from inflation_station.errors import InflationStationError
 from inflation_station.purchase import fund_names
 from inflation_station.settings import Settings
 from inflation_station.store import Store, database_exists
-from inflation_station.valuation import NO_PRICES, Timeline, timeline
+from inflation_station.valuation import CZK, NO_PRICES, Timeline, no_rates, timeline
 
 if TYPE_CHECKING:
+    from datetime import date
+
     from inflation_station.purchase import Purchase
 
 
@@ -57,17 +59,46 @@ def fetch_prices(data_dir: Path) -> None:
         raise click.ClickException(str(e)) from e
 
 
+@main.command("fetch-fx")
+@click.pass_obj
+def fetch_fx(data_dir: Path) -> None:
+    """Download daily CZK rates from ČNB for every currency a purchased fund is priced in."""
+    try:
+        purchases = _stored_purchases(data_dir, "to fetch rates for")
+        first_held: dict[str, date] = {}
+        for p in sorted(purchases, key=lambda p: p.trade_date):
+            if p.unit_price_currency != CZK:
+                first_held.setdefault(p.unit_price_currency, p.trade_date)
+        if not first_held:
+            click.echo(f"Every Purchase is priced in {CZK}; no rates to fetch.")
+            return
+        store = Store(data_dir)
+        for currency, first in sorted(first_held.items()):
+            stored = [r.day for r in store.fx_rates() if r.currency == currency]
+            added = already_present = 0
+            for month in cnb.months_to_fetch(first, clock.today(), stored):
+                # Stored month by month, so a later failure keeps what was fetched before it.
+                result = store.add_fx_rates(cnb.rates(currency, month))
+                added += result.added
+                already_present += result.already_present
+            click.echo(f"{currency}: {added} rates added, {already_present} already present.")
+    except InflationStationError as e:
+        raise click.ClickException(str(e)) from e
+
+
 @main.command()
 @click.pass_obj
 def chart(data_dir: Path) -> None:
     """Write an interactive HTML chart of the portfolio to the data directory."""
     try:
         purchases = _stored_purchases(data_dir, "to chart")
-        t = timeline(purchases, prices=Store(data_dir).fund_prices(), today=clock.today())
+        store = Store(data_dir)
+        prices = store.fund_prices()
+        t = timeline(purchases, prices=prices, rates=store.fx_rates(), today=clock.today())
         path = write_chart(t, data_dir)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
-    _report_not_valued(t)
+    _report_not_valued(t, {p.currency for p in prices})
     click.echo(f"Chart written to {path}")
 
 
@@ -80,11 +111,18 @@ def _stored_purchases(data_dir: Path, purpose: str) -> list[Purchase]:
     return purchases
 
 
-def _report_not_valued(t: Timeline) -> None:
+def _report_not_valued(t: Timeline, price_currencies: set[str]) -> None:
     """Name the funds left out of the chart, grouped by why, on stderr."""
+    rate_reasons = {no_rates(currency) for currency in price_currencies}
     by_reason: dict[str, list[str]] = {}
     for isin, reason in t.not_valued.items():
         by_reason.setdefault(reason, []).append(f"{t.fund_names[isin]} ({isin})")
     for reason, funds in by_reason.items():
-        hint = "; run inflation-station fetch-prices" if reason == NO_PRICES else ""
+        # A fund is left out for missing prices, missing rates, or prices in more than one currency.
+        if reason == NO_PRICES:
+            hint = "; run inflation-station fetch-prices"
+        elif reason in rate_reasons:
+            hint = "; run inflation-station fetch-fx"
+        else:
+            hint = ""
         click.echo(f"Not valued ({reason}{hint}): {', '.join(funds)}", err=True)

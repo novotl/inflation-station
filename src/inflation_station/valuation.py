@@ -12,11 +12,16 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
     from inflation_station.fund_price import FundPrice
+    from inflation_station.fx_rate import FxRate
     from inflation_station.purchase import Purchase
 
-# Until FX conversion exists, only funds priced in CZK can be valued in CZK.
-VALUED_CURRENCY = "CZK"
+CZK = "CZK"
 NO_PRICES = "no prices stored"
+
+
+def no_rates(currency: str) -> str:
+    """Why a fund priced in `currency` can't be valued when no rates of it are stored."""
+    return f"no {currency} rates stored"
 
 
 @dataclass(frozen=True)
@@ -31,7 +36,8 @@ class Timeline:
     amount_invested: tuple[Decimal, ...]
     # The latest fund name by ISIN, for every fund purchased.
     fund_names: Mapping[str, str]
-    # CZK value by ISIN, for the funds that can be valued: units held x the last known price on or before the day.
+    # CZK value by ISIN, for the funds that can be valued: units held x the last known price on or before the day,
+    # x the last known CZK rate on or before the day for funds not priced in CZK.
     fund_values: Mapping[str, tuple[Decimal | None, ...]]
     # The sum of `fund_values`; None when no fund can be valued.
     portfolio_value: tuple[Decimal | None, ...] | None
@@ -39,7 +45,9 @@ class Timeline:
     not_valued: Mapping[str, str]
 
 
-def timeline(purchases: Sequence[Purchase], *, prices: Sequence[FundPrice] = (), today: date) -> Timeline:
+def timeline(
+    purchases: Sequence[Purchase], *, prices: Sequence[FundPrice] = (), rates: Sequence[FxRate] = (), today: date
+) -> Timeline:
     """`purchases` must not be empty: with nothing bought there is no first day."""
     first = min(p.trade_date for p in purchases)
     dates = tuple(first + timedelta(days=n) for n in range((today - first).days + 1))
@@ -51,10 +59,17 @@ def timeline(purchases: Sequence[Purchase], *, prices: Sequence[FundPrice] = (),
         currencies = sorted({p.currency for p in fund_prices})
         if not fund_prices:
             not_valued[isin] = NO_PRICES
-        elif currencies != [VALUED_CURRENCY]:
+        elif len(currencies) > 1:
             not_valued[isin] = f"priced in {', '.join(currencies)}"
+        elif currencies != [CZK] and not any(r.currency == currencies[0] for r in rates):
+            not_valued[isin] = no_rates(currencies[0])
         else:
-            fund_values[isin] = _fund_value(dates, [p for p in purchases if p.isin == isin], fund_prices)
+            czk_per_unit = (
+                tuple(Decimal(1) for _ in dates)
+                if currencies == [CZK]
+                else _last_known(dates, [(r.day, r.czk_per_unit) for r in rates if r.currency == currencies[0]])
+            )
+            fund_values[isin] = _fund_value(dates, [p for p in purchases if p.isin == isin], fund_prices, czk_per_unit)
 
     return Timeline(
         dates=dates,
@@ -67,20 +82,35 @@ def timeline(purchases: Sequence[Purchase], *, prices: Sequence[FundPrice] = (),
 
 
 def _fund_value(
-    dates: Sequence[date], purchases: Sequence[Purchase], prices: Sequence[FundPrice]
+    dates: Sequence[date],
+    purchases: Sequence[Purchase],
+    prices: Sequence[FundPrice],
+    czk_per_unit: Sequence[Decimal | None],
 ) -> tuple[Decimal | None, ...]:
     units_held = _running_total(dates, [(p.trade_date, p.units) for p in purchases])
-    price_on = {p.day: p.price for p in prices}
-    # The last price on or before the first day, so a holding is valued from day one when a price exists.
-    last_price = max((p for p in prices if p.day <= dates[0]), key=lambda p: p.day, default=None)
-    price = last_price.price if last_price else None
+    price = _last_known(dates, [(p.day, p.price) for p in prices])
     values: list[Decimal | None] = []
-    for d, units in zip(dates, units_held, strict=True):
-        price = price_on.get(d, price)
+    for units, unit_price, rate in zip(units_held, price, czk_per_unit, strict=True):
         if not units:
             values.append(Decimal(0))
         else:
-            values.append(None if price is None else units * price)
+            values.append(None if unit_price is None or rate is None else units * unit_price * rate)
+    return tuple(values)
+
+
+def _last_known(dates: Sequence[date], points: Sequence[tuple[date, Decimal]]) -> tuple[Decimal | None, ...]:
+    """The value of the last point on or before each day, so gaps (weekends, holidays) carry the last one forward.
+
+    None until the first point.
+    """
+    on = dict(points)
+    # The last point on or before the first day, so a series has a value from day one when one exists.
+    last = max((p for p in points if p[0] <= dates[0]), key=lambda p: p[0], default=None)
+    value = last[1] if last else None
+    values = []
+    for d in dates:
+        value = on.get(d, value)
+        values.append(value)
     return tuple(values)
 
 
