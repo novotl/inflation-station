@@ -1,0 +1,15 @@
+Datum a čas pohybu;Datum a čas zobchodování;Typ pohybu;Název CP;Ticker;Burza;Objem v měně platby;Měna platby;ISIN;ID pokynu;ID obchodu;ID pohybu;Portfolio;Účet;Depozitář;Počet ks;Hodnota za ks (v měně obchodu);Měna kusové hodnoty (v měně obchodu);Poplatek (v měně obchodu);Měna poplatku (v měně obchodu);AUV;FX kurz;FX kurz - měny;Objem (v měně obchodu);Měna objemu obchodu (v měně obchodu)
+00:00 18.06.2021;;Vklad - vyrovnání nákupu CP klienta - Vklad pro obchod;;;;"8 000,00";CZK;;;;900100001;900000001;CZK - 900000001;;;;;;;;;;;
+00:00 18.06.2021;;Vklad - vyrovnání nákupu CP klienta - Vklad pro obchod;;;;"5 000,00";CZK;;;;900100002;900000001;CZK - 900000001;;;;;;;;;;;
+00:00 18.06.2021;00:00 15.06.2021;Investice klienta (vklad);FF - World Fund A-ACC-CZK;FIWFAAC;;"-8 000,00";CZK;LU1756523376;;900200001;900100003;900000001;CZK - 900000001;;"5,41";"1 436,00";CZK;"231,24";CZK;",00";;;"7 768,77";CZK
+00:00 18.06.2021;00:00 15.06.2021;Investice klienta (vklad);AMUNDI FUNDS US PIONEER FUND - A EUR (C);AUPFAEC;;"-5 000,00";CZK;LU1883872332;;900200002;900100004;900000001;CZK - 900000001;;"12,07";"15,52";EUR;"145,63";CZK;",00";;;"187,34";EUR
+00:00 17.06.2021;;Vklad - vyrovnání nákupu CP klienta - Vklad pro obchod;;;;"5 000,00";CZK;;;;900100005;900000001;CZK - 900000001;;;;;;;;;;;
+00:00 17.06.2021;00:00 14.06.2021;Investice klienta (vklad);FTIF-Franklin Technology Fund-A(acc)EUR;TEMTACU;;"-5 000,00";CZK;LU0260870158;;900200003;900100006;900000001;CZK - 900000001;;"5,27";"35,58";EUR;"145,50";CZK;",00";;;"187,35";EUR
+00:00 21.05.2021;00:00 18.05.2021;Investice klienta (vklad);FF - World Fund A-ACC-CZK;FIWFAAC;;"-8 000,00";CZK;LU1756523376;;900200004;900100007;900000001;CZK - 900000001;;"5,52";"1 407,98";CZK;"234,98";CZK;",00";;;"7 765,02";CZK
+00:00 21.05.2021;00:00 18.05.2021;Investice klienta (vklad);FTIF-Franklin Technology Fund-A(acc)EUR;TEMTACU;;"-5 000,00";CZK;LU0260870158;;900200005;900100008;900000001;CZK - 900000001;;"5,88";"31,88";EUR;"145,63";CZK;",00";;;"187,30";EUR
+00:00 21.05.2021;;Vklad - vyrovnání nákupu CP klienta - Vklad pro obchod;;;;"8 000,00";CZK;;;;900100009;900000001;CZK - 900000001;;;;;;;;;;;
+00:00 21.05.2021;;Vklad - vyrovnání nákupu CP klienta - Vklad pro obchod;;;;"5 000,00";CZK;;;;900100010;900000001;CZK - 900000001;;;;;;;;;;;
+00:00 04.05.2021;00:00 30.04.2021;Investice klienta (vklad);J&T MONEY A CZK OPF;JTAMMON;Nerozlišeno - fondy;"-100 000,00";CZK;CZ0008473808;900300001;900200006;900100011;900000001;CZK - 900000001;;"70 705,00";"1,40";CZK;"793,82";CZK;",00";;;"99 206,19";CZK
+00:00 04.05.2021;;Vklad - vyrovnání nákupu CP klienta - Vklad pro obchod;;;;"100 000,00";CZK;;;;900100012;900000001;CZK - 900000001;;;;;;;;;;;
+00:00 03.05.2021;00:00 28.04.2021;Investice klienta (vklad);FF - World Fund A-ACC-CZK;FIWFAAC;Nerozlišeno - fondy;"-104 000,00";CZK;LU1756523376;900300002;900200007;900100013;900000001;CZK - 900000001;;"68,97";"1 463,99";CZK;"3 028,61";CZK;",00";;;"100 971,39";CZK
+00:00 03.05.2021;;Vklad - vyrovnání nákupu CP klienta - Vklad pro obchod;;;;"104 000,00";CZK;;;;900100014;900000001;CZK - 900000001;;;;;;;;;;;
