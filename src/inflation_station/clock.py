@@ -1,6 +1,9 @@
-from datetime import date
+from datetime import UTC, date, datetime
 
 
 def today() -> date:
-    """The local date. Tests replace this function to pin "today"."""
-    return date.today()  # noqa: DTZ011 - "today" is the user's calendar day, in their local time zone
+    """The UTC date, never the local one, so results don't depend on the machine's time zone.
+
+    Tests replace this function to pin "today".
+    """
+    return datetime.now(UTC).date()
