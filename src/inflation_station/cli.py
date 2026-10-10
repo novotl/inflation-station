@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 import click
 
-from inflation_station import clock, cnb, conseq, jt
+from inflation_station import clock, cnb, conseq, csu, jt
 from inflation_station.chart import write_chart
 from inflation_station.errors import InflationStationError
 from inflation_station.price_check import price_warnings
@@ -86,6 +86,17 @@ def fetch_fx(data_dir: Path) -> None:
         raise click.ClickException(str(e)) from e
 
 
+@main.command("fetch-cpi")
+@click.pass_obj
+def fetch_cpi(data_dir: Path) -> None:
+    """Download ČSÚ's national CPI, for the inflation hurdle."""
+    try:
+        result = Store(data_dir).add_index_levels(csu.cpi())
+    except InflationStationError as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(f"ČSÚ CPI: {result.added} months added, {result.already_present} already present.")
+
+
 @main.command()
 @click.pass_obj
 def chart(data_dir: Path) -> None:
@@ -94,7 +105,13 @@ def chart(data_dir: Path) -> None:
         purchases = _stored_purchases(data_dir, "to chart")
         store = Store(data_dir)
         prices = store.fund_prices()
-        t = timeline(purchases, prices=prices, rates=store.fx_rates(), today=clock.today())
+        t = timeline(
+            purchases,
+            prices=prices,
+            rates=store.fx_rates(),
+            index_levels=store.index_levels(),
+            today=clock.today(),
+        )
         path = write_chart(t, data_dir)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
