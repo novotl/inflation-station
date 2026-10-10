@@ -7,7 +7,7 @@ requires-python = ">=3.14"
 dependencies = []
 
 [project.scripts]
-inflation-station = "inflation_station:main"
+inflation-station = "inflation_station.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.24,<0.13.0"]
@@ -40,6 +40,9 @@ ignore = [
     "S101",   # asserts are how pytest works
     "INP001", # tests/ is intentionally not a package
 ]
+
+[tool.deptry]
+known_first_party = ["inflation_station"] # src/ layout isn't detected on its own
 
 [tool.ty.terminal]
 error-on-warning = true
