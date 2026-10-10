@@ -118,7 +118,10 @@ def chart(data_dir: Path) -> None:
     try:
         purchases = _stored_purchases(data_dir, "to chart")
         store = Store(data_dir)
-        prices, rates, index_levels, today = store.fund_prices(), store.fx_rates(), store.index_levels(), clock.today()
+        prices = store.fund_prices()
+        rates = store.fx_rates()
+        index_levels = store.index_levels()
+        today = clock.today()
         t = timeline(purchases, prices=prices, rates=rates, index_levels=index_levels, today=today)
         path = write_chart(t, data_dir)
     except InflationStationError as e:

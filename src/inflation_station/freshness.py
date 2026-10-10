@@ -27,7 +27,7 @@ def out_of_date(
     prices: Iterable[FundPrice] = (),
     rates: Iterable[FxRate] = (),
     index_levels: Iterable[IndexLevel] = (),
-    fund_names: Mapping[str, str] | None = None,
+    fund_names: Mapping[str, str],
     today: date,
 ) -> list[str]:
     """A warning for each fund's prices, each currency's rates and each price index series that is out of date.
@@ -36,7 +36,7 @@ def out_of_date(
     """
     warnings = []
     last_price = _last((p.isin, p.day) for p in prices)
-    for isin, name in (fund_names or {}).items():
+    for isin, name in fund_names.items():
         last = last_price.get(isin)
         if last is not None and _business_days(last, today) > MAX_BUSINESS_DAYS:
             warnings.append(f"{name} ({isin}) prices end on {last}; run inflation-station fetch-prices")
@@ -44,7 +44,7 @@ def out_of_date(
         if _business_days(last, today) > MAX_BUSINESS_DAYS:
             warnings.append(f"{currency} rates end on {last}; run inflation-station fetch-fx")
     for series, last in sorted(_last((i.series, i.month) for i in index_levels).items()):
-        if (today.year - last.year) * 12 + today.month - last.month > MAX_MONTHS:
+        if _months_between(last, today) > MAX_MONTHS:
             warnings.append(f"{NAMES[series]} ends with {last:%Y-%m}; run inflation-station fetch-cpi")
     return warnings
 
@@ -60,3 +60,8 @@ def _last(points: Iterable[tuple[str, date]]) -> dict[str, date]:
 def _business_days(after: date, until: date) -> int:
     """The Mondays to Fridays after `after`, up to and including `until`."""
     return sum((after + timedelta(days=n)).weekday() < SATURDAY for n in range(1, (until - after).days + 1))
+
+
+def _months_between(since: date, until: date) -> int:
+    """How many months `until`'s month is after `since`'s."""
+    return (until.year - since.year) * 12 + until.month - since.month
