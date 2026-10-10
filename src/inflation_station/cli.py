@@ -91,7 +91,8 @@ def fetch_fx(data_dir: Path) -> None:
 def fetch_cpi(data_dir: Path) -> None:
     """Download ČSÚ's national CPI, for the inflation hurdle."""
     try:
-        result = Store(data_dir).add_index_levels(csu.cpi())
+        store = Store(data_dir)
+        result = store.add_index_levels(csu.continuing(csu.cpi(), store.index_levels()))
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
     click.echo(f"ČSÚ CPI: {result.added} months added, {result.already_present} already present.")

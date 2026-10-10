@@ -6,12 +6,17 @@ changes run on across it.
 
 import csv
 import io
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from inflation_station import web
 from inflation_station.errors import InflationStationError
 from inflation_station.price_index import CSU_CPI, IndexLevel
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
 
 URL = "https://data.csu.gov.cz/api/dotaz/v1/data/vybery/CEN0101HT02?format=CSV"
 # The selection also has year-on-year changes and the 12-month average; only month-on-month rows are chained.
@@ -41,6 +46,21 @@ def cpi() -> list[IndexLevel]:
     except (csv.Error, ValueError, KeyError, ArithmeticError) as e:
         msg = f"cannot read the ČSÚ CPI {URL}: {e}"
         raise InflationStationError(msg) from e
+
+
+def continuing(levels: Sequence[IndexLevel], stored: Iterable[IndexLevel]) -> list[IndexLevel]:
+    """`levels` rescaled to agree with `stored` in the latest month both have, so the series keeps one base.
+
+    Each fetch chains from its own first month; were ČSÚ's selection to start later, the new months would otherwise
+    be appended at a different scale. Unchanged when nothing is stored for those months.
+    """
+    at = {i.month: i.level for i in stored if i.series == CSU_CPI}
+    common = [i for i in levels if i.month in at]
+    if not common:
+        return list(levels)
+    anchor = max(common, key=lambda i: i.month)
+    scale = at[anchor.month] / anchor.level
+    return [replace(i, level=i.level * scale) for i in levels]
 
 
 def _changes(response: bytes) -> dict[date, Decimal]:

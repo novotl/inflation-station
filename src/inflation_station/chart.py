@@ -17,8 +17,8 @@ if TYPE_CHECKING:
 
 CHART_NAME = "chart.html"
 HOVER_CZK = "%{y:,.2f} CZK"
-# The legend name and line style of each price index series' hurdle.
-HURDLES = {CSU_CPI: ("Inflation hurdle (ČSÚ CPI)", "solid")}
+# The name each price index series goes by in the legend.
+INDEX_NAMES = {CSU_CPI: "ČSÚ CPI"}
 HURDLE_COLOR = "black"
 
 
@@ -32,15 +32,16 @@ def write_chart(timeline: Timeline, data_dir: Path) -> Path:
         figure.add_scatter(x=timeline.dates, y=_floats(values), name=timeline.fund_names[isin])
     figure.add_scatter(x=timeline.dates, y=_floats(timeline.amount_invested), name="Amount invested", line_shape="hv")
     for series, hurdle in timeline.hurdles.items():
-        _add_hurdle(figure, timeline.dates, hurdle, *HURDLES[series])
+        _add_hurdle(figure, timeline.dates, hurdle, INDEX_NAMES[series])
     figure.update_traces(hovertemplate=HOVER_CZK)
     path = data_dir / CHART_NAME
     figure.write_html(path, include_plotlyjs=True)
     return path
 
 
-def _add_hurdle(figure: go.Figure, dates: Sequence[date], hurdle: Hurdle, name: str, dash: str) -> None:
-    """The published part in the series' style; the estimated part dotted, starting where the published part ends."""
+def _add_hurdle(figure: go.Figure, dates: Sequence[date], hurdle: Hurdle, index_name: str) -> None:
+    """The published part solid; the estimated part dotted, starting where the published part ends."""
+    name = f"Inflation hurdle ({index_name})"
     published = [n for n, d in enumerate(dates) if d < hurdle.estimated_from]
     if published:
         figure.add_scatter(
@@ -48,14 +49,14 @@ def _add_hurdle(figure: go.Figure, dates: Sequence[date], hurdle: Hurdle, name: 
             y=_floats([hurdle.values[n] for n in published]),
             name=name,
             legendgroup=name,
-            line={"color": HURDLE_COLOR, "dash": dash},
+            line={"color": HURDLE_COLOR, "dash": "solid"},
         )
     estimated = [n for n, d in enumerate(dates) if d >= hurdle.estimated_from - timedelta(days=1)]
     if estimated:
         figure.add_scatter(
             x=[dates[n] for n in estimated],
             y=_floats([hurdle.values[n] for n in estimated]),
-            name=f"{name.removesuffix(')')}, estimated)",
+            name=f"Inflation hurdle ({index_name}, estimated)",
             legendgroup=name,
             line={"color": HURDLE_COLOR, "dash": "dot"},
         )
