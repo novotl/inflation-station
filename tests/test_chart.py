@@ -122,3 +122,31 @@ def test_chart_with_an_empty_database_fails_with_a_readable_message(tmp_path: Pa
         "Error: no Purchases to chart yet; import an export first: inflation-station import <csv>\n",
     )
     assert list(tmp_path.iterdir()) == []  # neither a chart nor a database was created
+
+
+def test_after_fetching_cpi_the_chart_has_a_solid_hurdle_line_and_a_dotted_estimated_tail(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", EXPORT)
+    run("--data-dir", tmp_path, "fetch-cpi")
+    run("--data-dir", tmp_path, "chart")
+
+    lines = traces(tmp_path / "chart.html")
+    published, estimated = lines["Inflation hurdle (ČSÚ CPI)"], lines["Inflation hurdle (ČSÚ CPI, estimated)"]
+    assert published["line"].get("dash", "solid") == "solid"
+    assert estimated["line"]["dash"] == "dot"
+    # May 2021 is the last month published by "today", 1 Jul 2021, so the index is published only up to 1 May; the
+    # estimated tail starts there, so the two lines meet.
+    assert (published["x"][0], published["x"][-1]) == ("2021-04-28", "2021-05-01")
+    assert (estimated["x"][0], estimated["x"][-1]) == ("2021-05-01", "2021-07-01")
+    # May's level is 0.2 % above April's, placed on 1 May, with constant daily growth over April's 30 days:
+    # 104 000 CZK bought on 28 Apr and 100 000 CZK on 30 Apr.
+    may = 1.002
+    assert published["y"][-1] == pytest.approx(104000 * may ** (3 / 30) + 100000 * may ** (1 / 30))
+    # June and July are estimated at May's 0.2 % too. Also 13 000 CZK on 18 May (of 31 days), 5 000 CZK on 14 Jun and
+    # 13 000 CZK on 15 Jun (of 30).
+    assert estimated["y"][-1] == pytest.approx(
+        104000 * may ** (2 + 3 / 30)
+        + 100000 * may ** (2 + 1 / 30)
+        + 13000 * may ** (2 - 17 / 31)
+        + 5000 * may ** (1 - 13 / 30)
+        + 13000 * may ** (1 - 14 / 30)
+    )

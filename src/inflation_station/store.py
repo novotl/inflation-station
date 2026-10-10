@@ -13,6 +13,7 @@ from sqlalchemy.types import TypeDecorator
 
 from inflation_station.fund_price import FundPrice
 from inflation_station.fx_rate import FxRate
+from inflation_station.price_index import IndexLevel
 from inflation_station.purchase import Purchase
 
 if TYPE_CHECKING:
@@ -104,6 +105,16 @@ class FxRateRecord(Base):
     currency: Mapped[str]
     day: Mapped[date]
     czk_per_unit: Mapped[Decimal]
+
+
+class PriceIndexRecord(Base):
+    __tablename__ = "price_index"
+    __table_args__ = (UniqueConstraint("series", "month"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    series: Mapped[str]
+    month: Mapped[date]
+    level: Mapped[Decimal]
 
 
 @dataclass(frozen=True)
@@ -201,6 +212,26 @@ class Store:
                 added += 1
         return Added(added=added, already_present=already_present)
 
+    def add_index_levels(self, levels: Iterable[IndexLevel]) -> Added:
+        """Adds the levels not stored yet. A stored level is kept, even if `levels` has a different one that month."""
+        levels = list(levels)
+        with Session(self._engine) as session, session.begin():
+            stored = session.execute(
+                select(PriceIndexRecord.series, PriceIndexRecord.month).where(
+                    PriceIndexRecord.series.in_({i.series for i in levels})
+                )
+            )
+            seen = {tuple(row) for row in stored}
+            added = already_present = 0
+            for level in levels:
+                if (level.series, level.month) in seen:
+                    already_present += 1
+                    continue
+                seen.add((level.series, level.month))
+                session.add(PriceIndexRecord(series=level.series, month=level.month, level=level.level))
+                added += 1
+        return Added(added=added, already_present=already_present)
+
     def purchases(self) -> list[Purchase]:
         with Session(self._engine) as session:
             return [_purchase(record) for record in session.scalars(select(PurchaseRecord))]
@@ -217,6 +248,13 @@ class Store:
             return [
                 FxRate(currency=r.currency, day=r.day, czk_per_unit=r.czk_per_unit)
                 for r in session.scalars(select(FxRateRecord))
+            ]
+
+    def index_levels(self) -> list[IndexLevel]:
+        with Session(self._engine) as session:
+            return [
+                IndexLevel(series=r.series, month=r.month, level=r.level)
+                for r in session.scalars(select(PriceIndexRecord))
             ]
 
 

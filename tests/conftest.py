@@ -11,9 +11,11 @@ if TYPE_CHECKING:
 
 CONSEQ = Path(__file__).parent / "fixtures" / "conseq"
 CNB = Path(__file__).parent / "fixtures" / "cnb"
+CSU = Path(__file__).parent / "fixtures" / "csu"
 FUND_PAGE = "https://www.conseq.cz/investice/prehled-fondu/"
 PRICE_HISTORY = "https://www.conseq.cz/Conseq/Pricehist.ashx?productid={}&culture=cs-CZ"
 EUR_RATES = "https://api.cnb.cz/cnbapi/exrates/daily-currency-month?currency=EUR&yearMonth={}&lang=EN"
+CPI_CSV = "https://data.csu.gov.cz/api/dotaz/v1/data/vybery/CEN0101HT02?format=CSV"
 # The months of EUR rates recorded: from the first EUR Purchase in the J&T fixture to "today".
 EUR_MONTHS = ("2021-05", "2021-06", "2021-07")
 # The recorded prices end on this day.
@@ -33,6 +35,7 @@ def recorded() -> dict[str, Path]:
         **{FUND_PAGE + slug: CONSEQ / f"{slug}.html" for slug in pages},
         **{PRICE_HISTORY.format(p): CONSEQ / f"pricehist-{p}.xlsx" for p in (9613, 5485, 8804, 9171)},
         **{EUR_RATES.format(month): CNB / f"eur-{month}.json" for month in EUR_MONTHS},
+        CPI_CSV: CSU / "cen0101ht02.csv",
     }
 
 

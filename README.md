@@ -29,9 +29,12 @@ All data lives in the repo's gitignored `data/` directory unless you pass `--dat
 uv run inflation-station import data/jt_export.csv   # load a J&T transaction export; safe to re-run
 uv run inflation-station fetch-prices                # download fund prices from Conseq; keeps stored prices
 uv run inflation-station fetch-fx                    # download CZK rates from ČNB for funds not priced in CZK
+uv run inflation-station fetch-cpi                   # download ČSÚ's national CPI, for the inflation hurdle
 uv run inflation-station chart                       # write data/chart.html; open it in a browser
 ```
 
 `fetch-prices` finds each fund's Conseq page in `src/inflation_station/conseq_funds.toml`. To add a fund, put its ISIN and the URL of its page on [conseq.cz](https://www.conseq.cz/investice/prehled-fondu) there. After fetching, it compares each Purchase's unit price from the export with Conseq's price on the trade date and warns when they are in different currencies or differ by more than 0.5 % of Conseq's price; the warning changes nothing and Conseq's price is what the chart uses.
 
 `fetch-fx` downloads [ČNB](https://www.cnb.cz)'s daily rates for each currency a fund was bought in, a month per request, from the month of the first such Purchase to today. Re-runs request only months not stored yet, plus the latest stored month, in case it was fetched before it ended. The chart values those funds in CZK at the last rate published on or before each day.
+
+`fetch-cpi` downloads [ČSÚ](https://csu.gov.cz)'s month-on-month CPI changes (the headline "míra inflace") and chains them into an index; re-runs keep the months already stored and continue the index from them. The chart then draws the **inflation hurdle**: what the money invested would need to be worth to keep its purchasing power, each Purchase grown by the index from its trade date. Each month's index sits on its first day, with constant daily growth in between. Months ČSÚ hasn't published yet are estimated at the last published month-on-month change and drawn dotted.

@@ -1,5 +1,6 @@
-"""Turns Purchases and prices into a daily timeline of plain data. No I/O: everything it needs is passed in."""
+"""Turns Purchases, prices and price indices into a daily timeline of plain data. No I/O: all of it is passed in."""
 
+from bisect import bisect_right
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
 
     from inflation_station.fund_price import FundPrice
     from inflation_station.fx_rate import FxRate
+    from inflation_station.price_index import IndexLevel
     from inflation_station.purchase import Purchase
 
 CZK = "CZK"
@@ -22,6 +24,19 @@ NO_PRICES = "no prices stored"
 def no_rates(currency: str) -> str:
     """Why a fund priced in `currency` can't be valued when no rates of it are stored."""
     return f"no {currency} rates stored"
+
+
+@dataclass(frozen=True)
+class Hurdle:
+    """What the money invested would need to be worth on each day to keep its purchasing power, by one price index.
+
+    A value is None on a day the index is unknown for a Purchase counted that day.
+    """
+
+    # Σ gross CZK x I(day) / I(trade date), over the Purchases traded on or before the day.
+    values: tuple[Decimal | None, ...]
+    # The first day whose index leans on an estimated month: the day after the last published month starts.
+    estimated_from: date
 
 
 @dataclass(frozen=True)
@@ -43,10 +58,17 @@ class Timeline:
     portfolio_value: tuple[Decimal | None, ...] | None
     # Why each fund left out of `fund_values` couldn't be valued, by ISIN.
     not_valued: Mapping[str, str]
+    # The inflation hurdle by price index series, for every series with index levels.
+    hurdles: Mapping[str, Hurdle]
 
 
 def timeline(
-    purchases: Sequence[Purchase], *, prices: Sequence[FundPrice] = (), rates: Sequence[FxRate] = (), today: date
+    purchases: Sequence[Purchase],
+    *,
+    prices: Sequence[FundPrice] = (),
+    rates: Sequence[FxRate] = (),
+    index_levels: Sequence[IndexLevel] = (),
+    today: date,
 ) -> Timeline:
     """`purchases` must not be empty: with nothing bought there is no first day."""
     first = min(p.trade_date for p in purchases)
@@ -78,7 +100,53 @@ def timeline(
         fund_values=fund_values,
         portfolio_value=_sum(fund_values.values()) if fund_values else None,
         not_valued=not_valued,
+        hurdles={
+            series: _hurdle(dates, purchases, [i for i in index_levels if i.series == series])
+            for series in sorted({i.series for i in index_levels})
+        },
     )
+
+
+def _hurdle(dates: Sequence[date], purchases: Sequence[Purchase], levels: Sequence[IndexLevel]) -> Hurdle:
+    """`levels` must not be empty, and must be one series' levels for consecutive months."""
+    index = dict(zip(dates, _daily_index(dates, levels), strict=True))
+    values: list[Decimal | None] = []
+    for d in dates:
+        now = index[d]
+        bought = [(p.gross_czk, index[p.trade_date]) for p in purchases if p.trade_date <= d]
+        known = [(gross_czk, then) for gross_czk, then in bought if then is not None]
+        if now is None or len(known) < len(bought):
+            values.append(None)
+        else:
+            values.append(sum((gross_czk * now / then for gross_czk, then in known), Decimal(0)))
+    return Hurdle(values=tuple(values), estimated_from=max(i.month for i in levels) + timedelta(days=1))
+
+
+def _daily_index(dates: Sequence[date], levels: Sequence[IndexLevel]) -> tuple[Decimal | None, ...]:
+    """The index on each day: each month's level sits on its first day, with constant daily growth in between.
+
+    Months after the last published one grow by its month-on-month change. None before the first month.
+    """
+    points = sorted((i.month, i.level) for i in levels)
+    # With a single month there is no change to carry forward, so the index stays flat.
+    growth = points[-1][1] / points[-2][1] if len(points) > 1 else Decimal(1)
+    while points[-1][0] <= dates[-1]:
+        month, level = points[-1]
+        points.append((_next_month(month), level * growth))
+    months = [month for month, _ in points]
+    values: list[Decimal | None] = []
+    for d in dates:
+        n = bisect_right(months, d) - 1
+        if n < 0:
+            values.append(None)
+            continue
+        (start, low), (end, high) = points[n], points[n + 1]
+        values.append(low * (high / low) ** (Decimal((d - start).days) / Decimal((end - start).days)))
+    return tuple(values)
+
+
+def _next_month(month: date) -> date:
+    return (month + timedelta(days=31)).replace(day=1)
 
 
 def _fund_value(

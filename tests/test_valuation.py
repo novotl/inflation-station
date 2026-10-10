@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from inflation_station.fund_price import FundPrice
 from inflation_station.fx_rate import FxRate
+from inflation_station.price_index import CSU_CPI, IndexLevel
 from inflation_station.purchase import Purchase
 from inflation_station.valuation import timeline
 
@@ -193,3 +194,90 @@ def test_fund_names_come_from_the_purchases() -> None:
     t = timeline([purchase(date(2021, 6, 13), "1000")], today=date(2021, 6, 13))
 
     assert t.fund_names == {CZK_FUND: f"Fund {CZK_FUND}"}
+
+
+def level(month: date, value: str) -> IndexLevel:
+    return IndexLevel(series=CSU_CPI, month=month, level=Decimal(value))
+
+
+def test_index_levels_are_interpolated_geometrically_within_a_month() -> None:
+    t = timeline(
+        [purchase(date(2021, 6, 1), "1000")],
+        index_levels=[level(date(2021, 6, 1), "100"), level(date(2021, 7, 1), "121"), level(date(2021, 8, 1), "121")],
+        today=date(2021, 7, 1),
+    )
+
+    hurdle = t.hurdles[CSU_CPI].values
+    # 16 Jun is halfway through June's 30 days, so the index is 100 x (121 / 100) ^ 0.5 = 110: 1000 x 110 / 100.
+    assert hurdle[t.dates.index(date(2021, 6, 16))] == Decimal(1100)
+    assert (hurdle[0], hurdle[-1]) == (Decimal(1000), Decimal(1210))
+
+
+def test_the_hurdle_grows_a_purchase_from_its_trade_date() -> None:
+    t = timeline(
+        [purchase(date(2021, 6, 16), "1100")],
+        index_levels=[level(date(2021, 6, 1), "100"), level(date(2021, 7, 1), "121"), level(date(2021, 8, 1), "121")],
+        today=date(2021, 7, 1),
+    )
+
+    # Bought when the index was 110, so on 1 Jul, at 121, it needs to be worth 1100 x 121 / 110.
+    assert t.hurdles[CSU_CPI].values[-1] == Decimal(1210)
+
+
+def test_the_hurdle_sums_every_purchase_traded_on_or_before_the_day() -> None:
+    t = timeline(
+        [purchase(date(2021, 5, 1), "1000"), purchase(date(2021, 6, 1), "500", isin=OTHER_CZK_FUND)],
+        index_levels=[
+            level(date(2021, 5, 1), "100"),
+            level(date(2021, 6, 1), "110"),
+            level(date(2021, 7, 1), "121"),
+            level(date(2021, 8, 1), "121"),
+        ],
+        today=date(2021, 7, 1),
+    )
+
+    hurdle = t.hurdles[CSU_CPI].values
+    assert hurdle[0] == Decimal(1000)  # the second Purchase isn't counted yet
+    assert hurdle[t.dates.index(date(2021, 6, 1))] == Decimal(1100) + Decimal(500)
+    assert hurdle[-1] == Decimal(1210) + Decimal(550)
+
+
+def test_months_after_the_last_published_one_carry_its_month_on_month_change_forward() -> None:
+    t = timeline(
+        [purchase(date(2021, 5, 1), "1000")],
+        index_levels=[level(date(2021, 5, 1), "100"), level(date(2021, 6, 1), "110")],
+        today=date(2021, 8, 1),
+    )
+
+    hurdle = t.hurdles[CSU_CPI].values
+    # June rose 10 % on May, so July is estimated at 110 x 1.1 = 121 and August at 133.1.
+    assert hurdle[t.dates.index(date(2021, 7, 1))] == Decimal(1210)
+    assert hurdle[-1] == Decimal(1331)
+
+
+def test_the_estimate_starts_the_day_after_the_last_published_month_starts() -> None:
+    t = timeline(
+        [purchase(date(2021, 5, 1), "1000")],
+        index_levels=[level(date(2021, 5, 1), "100"), level(date(2021, 6, 1), "110")],
+        today=date(2021, 8, 1),
+    )
+
+    # From 2 Jun on, the index lies between June's published level and July's estimated one.
+    assert t.hurdles[CSU_CPI].estimated_from == date(2021, 6, 2)
+
+
+def test_the_hurdle_is_unknown_before_the_first_index_level() -> None:
+    t = timeline(
+        [purchase(date(2021, 5, 31), "1000")],
+        index_levels=[level(date(2021, 6, 1), "100"), level(date(2021, 7, 1), "110")],
+        today=date(2021, 6, 1),
+    )
+
+    # Every day counts the 31 May Purchase, whose index is unknown.
+    assert t.hurdles[CSU_CPI].values == (None, None)
+
+
+def test_there_is_no_hurdle_without_index_levels() -> None:
+    t = timeline([purchase(date(2021, 6, 13), "1000")], today=date(2021, 6, 13))
+
+    assert t.hurdles == {}
