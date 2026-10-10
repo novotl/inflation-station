@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from click.testing import CliRunner
@@ -8,6 +9,9 @@ from test_chart import traces
 
 from inflation_station.cli import main
 from inflation_station.errors import InflationStationError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 EXPORT = Path(__file__).parent / "fixtures" / "jt_export.csv"
 # The month-on-month changes of January 2020 to May 2021, chained from December 2019; and Eurostat's levels of
@@ -191,11 +195,27 @@ def test_a_response_that_is_not_eurostat_json_stat_fails_naming_its_url(
     assert stderr.startswith(f"Error: Eurostat HICP: cannot read {HICP_JSON}: ")
 
 
+def json_stat(response: Path, change: Callable[[dict], object], copy: Path) -> Path:
+    """A copy of the JSON-stat `response` at `copy`, after `change` has edited it in place."""
+    dataset = json.loads(response.read_bytes())
+    change(dataset)
+    copy.write_text(json.dumps(dataset))
+    return copy
+
+
+def test_a_month_missing_between_published_ones_fails(tmp_path: Path, recorded: dict[str, Path]) -> None:
+    # September 2020, which interpolation would otherwise bridge.
+    recorded[HICP_JSON] = json_stat(recorded[HICP_JSON], lambda d: d["value"].pop("9"), tmp_path / "gap.json")
+
+    assert run("--data-dir", tmp_path, "fetch-cpi") == (
+        1,
+        CSU_STORED,
+        f"Error: Eurostat HICP: cannot read {HICP_JSON}: no index level for 2020-09\n",
+    )
+
+
 def test_a_eurostat_response_without_values_fails(tmp_path: Path, recorded: dict[str, Path]) -> None:
-    json_stat = json.loads(recorded[HICP_JSON].read_bytes())
-    json_stat["value"] = {}
-    recorded[HICP_JSON] = tmp_path / "empty.json"
-    recorded[HICP_JSON].write_text(json.dumps(json_stat))
+    recorded[HICP_JSON] = json_stat(recorded[HICP_JSON], lambda d: d["value"].clear(), tmp_path / "empty.json")
 
     assert run("--data-dir", tmp_path, "fetch-cpi") == (
         1,
@@ -205,10 +225,10 @@ def test_a_eurostat_response_without_values_fails(tmp_path: Path, recorded: dict
 
 
 def test_a_eurostat_response_with_more_than_one_series_fails(tmp_path: Path, recorded: dict[str, Path]) -> None:
-    json_stat = json.loads(recorded[HICP_JSON].read_bytes())
-    json_stat["size"][json_stat["id"].index("geo")] = 2
-    recorded[HICP_JSON] = tmp_path / "two-countries.json"
-    recorded[HICP_JSON].write_text(json.dumps(json_stat))
+    def two_countries(dataset: dict) -> None:
+        dataset["size"][dataset["id"].index("geo")] = 2
+
+    recorded[HICP_JSON] = json_stat(recorded[HICP_JSON], two_countries, tmp_path / "two-countries.json")
 
     assert run("--data-dir", tmp_path, "fetch-cpi") == (
         1,
