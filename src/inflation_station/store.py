@@ -11,6 +11,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.pool import NullPool
 from sqlalchemy.types import TypeDecorator
 
+from inflation_station.fund_price import FundPrice
 from inflation_station.purchase import Purchase
 
 if TYPE_CHECKING:
@@ -83,8 +84,19 @@ class PurchaseRecord(Base):
     imported_at: Mapped[datetime]
 
 
+class FundPriceRecord(Base):
+    __tablename__ = "fund_price"
+    __table_args__ = (UniqueConstraint("isin", "day"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    isin: Mapped[str]
+    day: Mapped[date]
+    price: Mapped[Decimal]
+    currency: Mapped[str]
+
+
 @dataclass(frozen=True)
-class PurchasesAdded:
+class Added:
     added: int
     already_present: int
 
@@ -121,7 +133,7 @@ class Store:
         migrate(url)
         self._engine = engine(url)
 
-    def add_purchases(self, purchases: Iterable[Purchase]) -> PurchasesAdded:
+    def add_purchases(self, purchases: Iterable[Purchase]) -> Added:
         imported_at = datetime.now(UTC)
         purchases = list(purchases)
         key_columns = (PurchaseRecord.platform, PurchaseRecord.account_id, PurchaseRecord.source_row_id)
@@ -136,11 +148,38 @@ class Store:
                 seen.add(_key(purchase))
                 session.add(_record(purchase, imported_at))
                 added += 1
-        return PurchasesAdded(added=added, already_present=already_present)
+        return Added(added=added, already_present=already_present)
+
+    def add_fund_prices(self, prices: Iterable[FundPrice]) -> Added:
+        """Adds the prices not stored yet. A stored price is kept, even if `prices` has a different one that day."""
+        prices = list(prices)
+        with Session(self._engine) as session, session.begin():
+            stored = session.execute(
+                select(FundPriceRecord.isin, FundPriceRecord.day).where(
+                    FundPriceRecord.isin.in_({p.isin for p in prices})
+                )
+            )
+            seen = {tuple(row) for row in stored}
+            added = already_present = 0
+            for price in prices:
+                if (price.isin, price.day) in seen:
+                    already_present += 1
+                    continue
+                seen.add((price.isin, price.day))
+                session.add(FundPriceRecord(isin=price.isin, day=price.day, price=price.price, currency=price.currency))
+                added += 1
+        return Added(added=added, already_present=already_present)
 
     def purchases(self) -> list[Purchase]:
         with Session(self._engine) as session:
             return [_purchase(record) for record in session.scalars(select(PurchaseRecord))]
+
+    def fund_prices(self) -> list[FundPrice]:
+        with Session(self._engine) as session:
+            return [
+                FundPrice(isin=r.isin, day=r.day, price=r.price, currency=r.currency)
+                for r in session.scalars(select(FundPriceRecord))
+            ]
 
 
 def _key(p: Purchase) -> tuple[str, str, str]:

@@ -3,12 +3,12 @@ from typing import TYPE_CHECKING
 
 import click
 
-from inflation_station import clock, jt
+from inflation_station import clock, conseq, jt
 from inflation_station.chart import write_chart
 from inflation_station.errors import InflationStationError
 from inflation_station.settings import Settings
 from inflation_station.store import Store, database_exists
-from inflation_station.valuation import timeline
+from inflation_station.valuation import NO_PRICES, Timeline, timeline
 
 if TYPE_CHECKING:
     from inflation_station.purchase import Purchase
@@ -38,21 +38,58 @@ def import_(data_dir: Path, csv: Path) -> None:
     click.echo(f"{result.added} Purchases added, {result.already_present} already present.")
 
 
+@main.command("fetch-prices")
+@click.pass_obj
+def fetch_prices(data_dir: Path) -> None:
+    """Download the daily prices of every purchased fund from Conseq."""
+    try:
+        funds = _fund_names(_stored_purchases(data_dir, "to fetch prices for"))
+        pages = conseq.fund_pages(funds)
+        store = Store(data_dir)
+        for isin, page in pages.items():
+            # Stored fund by fund, so a later failure keeps what was fetched before it.
+            result = store.add_fund_prices(conseq.price_history(isin, page))
+            click.echo(
+                f"{funds[isin]} ({isin}): {result.added} prices added, {result.already_present} already present."
+            )
+    except InflationStationError as e:
+        raise click.ClickException(str(e)) from e
+
+
 @main.command()
 @click.pass_obj
 def chart(data_dir: Path) -> None:
     """Write an interactive HTML chart of the portfolio to the data directory."""
     try:
-        path = write_chart(timeline(_stored_purchases(data_dir), today=clock.today()), data_dir)
+        purchases = _stored_purchases(data_dir, "to chart")
+        t = timeline(purchases, prices=Store(data_dir).fund_prices(), today=clock.today())
+        path = write_chart(t, data_dir)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
+    _report_not_valued(t)
     click.echo(f"Chart written to {path}")
 
 
-def _stored_purchases(data_dir: Path) -> list[Purchase]:
+def _stored_purchases(data_dir: Path, purpose: str) -> list[Purchase]:
     """The stored Purchases; raises if there are none. Only reads: no database is created in an empty data directory."""
     purchases = Store(data_dir).purchases() if database_exists(data_dir) else []
     if not purchases:
-        msg = "no Purchases to chart yet; import an export first: inflation-station import <csv>"
+        msg = f"no Purchases {purpose} yet; import an export first: inflation-station import <csv>"
         raise InflationStationError(msg)
     return purchases
+
+
+def _fund_names(purchases: list[Purchase]) -> dict[str, str]:
+    """The latest name of each purchased fund, by ISIN, sorted by ISIN."""
+    latest = {p.isin: p.fund_name for p in sorted(purchases, key=lambda p: p.trade_date)}
+    return dict(sorted(latest.items()))
+
+
+def _report_not_valued(t: Timeline) -> None:
+    """Name the funds left out of the chart, grouped by why, on stderr."""
+    by_reason: dict[str, list[str]] = {}
+    for isin, reason in t.not_valued.items():
+        by_reason.setdefault(reason, []).append(f"{t.fund_names[isin]} ({isin})")
+    for reason, funds in by_reason.items():
+        hint = "; run inflation-station fetch-prices" if reason == NO_PRICES else ""
+        click.echo(f"Not valued ({reason}{hint}): {', '.join(funds)}", err=True)
