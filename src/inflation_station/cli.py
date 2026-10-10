@@ -6,6 +6,7 @@ import click
 from inflation_station import clock, conseq, jt
 from inflation_station.chart import write_chart
 from inflation_station.errors import InflationStationError
+from inflation_station.purchase import fund_names
 from inflation_station.settings import Settings
 from inflation_station.store import Store, database_exists
 from inflation_station.valuation import NO_PRICES, Timeline, timeline
@@ -43,7 +44,7 @@ def import_(data_dir: Path, csv: Path) -> None:
 def fetch_prices(data_dir: Path) -> None:
     """Download the daily prices of every purchased fund from Conseq."""
     try:
-        funds = _fund_names(_stored_purchases(data_dir, "to fetch prices for"))
+        funds = fund_names(_stored_purchases(data_dir, "to fetch prices for"))
         pages = conseq.fund_pages(funds)
         store = Store(data_dir)
         for isin, page in pages.items():
@@ -77,12 +78,6 @@ def _stored_purchases(data_dir: Path, purpose: str) -> list[Purchase]:
         msg = f"no Purchases {purpose} yet; import an export first: inflation-station import <csv>"
         raise InflationStationError(msg)
     return purchases
-
-
-def _fund_names(purchases: list[Purchase]) -> dict[str, str]:
-    """The latest name of each purchased fund, by ISIN, sorted by ISIN."""
-    latest = {p.isin: p.fund_name for p in sorted(purchases, key=lambda p: p.trade_date)}
-    return dict(sorted(latest.items()))
 
 
 def _report_not_valued(t: Timeline) -> None:

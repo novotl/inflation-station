@@ -107,6 +107,7 @@ def test_refetching_keeps_stored_prices_when_conseq_changes_them(tmp_path: Path,
 
 
 def with_every_price_set_to_1(xlsx: Path, changed: Path) -> Path:
+    """A copy of the price history `xlsx` at `changed`, as if Conseq had changed every price to 1."""
     sheet = "xl/worksheets/sheet1.xml"
     with zipfile.ZipFile(xlsx) as original, zipfile.ZipFile(changed, "w") as copy:
         for name in original.namelist():

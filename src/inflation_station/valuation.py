@@ -6,6 +6,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from inflation_station.purchase import fund_names
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
@@ -57,7 +59,7 @@ def timeline(purchases: Sequence[Purchase], *, prices: Sequence[FundPrice] = (),
     return Timeline(
         dates=dates,
         amount_invested=_running_total(dates, [(p.trade_date, p.gross_czk) for p in purchases]),
-        fund_names={p.isin: p.fund_name for p in sorted(purchases, key=lambda p: p.trade_date)},
+        fund_names=fund_names(purchases),
         fund_values=fund_values,
         portfolio_value=_sum(fund_values.values()) if fund_values else None,
         not_valued=not_valued,

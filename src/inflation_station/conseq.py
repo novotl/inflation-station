@@ -114,6 +114,7 @@ def _rows(xlsx: bytes) -> list[list[str | None]]:
 
 
 def _excel_date(serial: str) -> date:
+    """The date of an Excel day number, like '44377' for 30 Jun 2021."""
     days = Decimal(serial)
     if days != days.to_integral_value():
         msg = f"{serial} is not a whole day"

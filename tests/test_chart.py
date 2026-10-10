@@ -1,21 +1,13 @@
 import json
 import socket
-from datetime import date
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
-from inflation_station import clock
 from inflation_station.cli import main
 
 EXPORT = Path(__file__).parent / "fixtures" / "jt_export.csv"
-TODAY = date(2021, 7, 1)
-
-
-@pytest.fixture(autouse=True)
-def fixed_today(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(clock, "today", lambda: TODAY)
 
 
 def run(*args: str | Path) -> tuple[int, str, str]:

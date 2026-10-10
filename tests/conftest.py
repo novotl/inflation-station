@@ -1,9 +1,10 @@
+from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
-from inflation_station import web
+from inflation_station import clock, web
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -11,6 +12,13 @@ if TYPE_CHECKING:
 CONSEQ = Path(__file__).parent / "fixtures" / "conseq"
 FUND_PAGE = "https://www.conseq.cz/investice/prehled-fondu/"
 PRICE_HISTORY = "https://www.conseq.cz/Conseq/Pricehist.ashx?productid={}&culture=cs-CZ"
+# The recorded prices end on this day.
+TODAY = date(2021, 7, 1)
+
+
+@pytest.fixture(autouse=True)
+def fixed_today(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(clock, "today", lambda: TODAY)
 
 
 @pytest.fixture
