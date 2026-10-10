@@ -88,9 +88,9 @@ def _fund_value(
     czk_per_unit: Sequence[Decimal | None],
 ) -> tuple[Decimal | None, ...]:
     units_held = _running_total(dates, [(p.trade_date, p.units) for p in purchases])
-    price = _last_known(dates, [(p.day, p.price) for p in prices])
+    unit_prices = _last_known(dates, [(p.day, p.price) for p in prices])
     values: list[Decimal | None] = []
-    for units, unit_price, rate in zip(units_held, price, czk_per_unit, strict=True):
+    for units, unit_price, rate in zip(units_held, unit_prices, czk_per_unit, strict=True):
         if not units:
             values.append(Decimal(0))
         else:

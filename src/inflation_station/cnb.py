@@ -47,5 +47,5 @@ def rates(currency: str, month: date) -> list[FxRate]:
             if r["currencyCode"] == currency
         ]
     except (ValueError, KeyError, TypeError, ArithmeticError) as e:
-        msg = f"cannot read the ČNB rates {url}: {e!r}"
+        msg = f"cannot read the ČNB rates {url}: {e}"
         raise InflationStationError(msg) from e

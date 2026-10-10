@@ -6,14 +6,12 @@ import click
 from inflation_station import clock, cnb, conseq, jt
 from inflation_station.chart import write_chart
 from inflation_station.errors import InflationStationError
-from inflation_station.purchase import fund_names
+from inflation_station.purchase import first_trade_dates, fund_names
 from inflation_station.settings import Settings
 from inflation_station.store import Store, database_exists
 from inflation_station.valuation import CZK, NO_PRICES, Timeline, no_rates, timeline
 
 if TYPE_CHECKING:
-    from datetime import date
-
     from inflation_station.purchase import Purchase
 
 
@@ -64,16 +62,13 @@ def fetch_prices(data_dir: Path) -> None:
 def fetch_fx(data_dir: Path) -> None:
     """Download daily CZK rates from ČNB for every currency a purchased fund is priced in."""
     try:
-        purchases = _stored_purchases(data_dir, "to fetch rates for")
-        first_held: dict[str, date] = {}
-        for p in sorted(purchases, key=lambda p: p.trade_date):
-            if p.unit_price_currency != CZK:
-                first_held.setdefault(p.unit_price_currency, p.trade_date)
+        first_held = first_trade_dates(_stored_purchases(data_dir, "to fetch rates for"))
+        first_held.pop(CZK, None)
         if not first_held:
             click.echo(f"Every Purchase is priced in {CZK}; no rates to fetch.")
             return
         store = Store(data_dir)
-        for currency, first in sorted(first_held.items()):
+        for currency, first in first_held.items():
             stored = [r.day for r in store.fx_rates() if r.currency == currency]
             added = already_present = 0
             for month in cnb.months_to_fetch(first, clock.today(), stored):

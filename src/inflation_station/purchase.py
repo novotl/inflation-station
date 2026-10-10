@@ -32,3 +32,11 @@ def fund_names(purchases: Iterable[Purchase]) -> dict[str, str]:
     """The name each purchased fund had in its latest Purchase, by ISIN, sorted by ISIN."""
     latest = {p.isin: p.fund_name for p in sorted(purchases, key=lambda p: p.trade_date)}
     return dict(sorted(latest.items()))
+
+
+def first_trade_dates(purchases: Iterable[Purchase]) -> dict[str, date]:
+    """The first trade date of the Purchases priced in each currency, by currency, sorted by currency."""
+    first: dict[str, date] = {}
+    for p in sorted(purchases, key=lambda p: p.trade_date):
+        first.setdefault(p.unit_price_currency, p.trade_date)
+    return dict(sorted(first.items()))
