@@ -1,0 +1,11 @@
+# Where fetch-prices downloads each fund's prices: ISIN = its fund page on conseq.cz.
+#
+# To add a fund, find it on https://www.conseq.cz/investice/prehled-fondu, check that the ISIN on its page is the
+# one you bought (funds often have several share classes, e.g. EUR and hedged CZK), and copy the page's URL here.
+
+LU1756523376 = "https://www.conseq.cz/investice/prehled-fondu/ff-world-fund-czk"
+LU0260870158 = "https://www.conseq.cz/investice/prehled-fondu/franklin-technology-fund-eur"
+LU1791183517 = "https://www.conseq.cz/investice/prehled-fondu/bgf-emerging-markets-fund-czk"
+LU1883872332 = "https://www.conseq.cz/investice/prehled-fondu/amundi-funds-us-pioneer-fund-a-eur"
+CZ0008473808 = "https://www.conseq.cz/investice/prehled-fondu/j-t-money-czk"
+LU0979392767 = "https://www.conseq.cz/investice/prehled-fondu/ff-america-fund-hedged-czk"

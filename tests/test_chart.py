@@ -1,21 +1,13 @@
 import json
 import socket
-from datetime import date
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
-from inflation_station import clock
 from inflation_station.cli import main
 
 EXPORT = Path(__file__).parent / "fixtures" / "jt_export.csv"
-TODAY = date(2021, 7, 1)
-
-
-@pytest.fixture(autouse=True)
-def fixed_today(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(clock, "today", lambda: TODAY)
 
 
 def run(*args: str | Path) -> tuple[int, str, str]:
@@ -35,8 +27,45 @@ def traces(chart: Path) -> dict[str, dict]:
 def test_chart_writes_an_html_file_in_the_data_directory(tmp_path: Path) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
 
-    assert run("--data-dir", tmp_path, "chart") == (0, f"Chart written to {tmp_path / 'chart.html'}\n", "")
+    assert run("--data-dir", tmp_path, "chart")[:2] == (0, f"Chart written to {tmp_path / 'chart.html'}\n")
     assert (tmp_path / "chart.html").read_text(encoding="utf-8").startswith("<!doctype html>")
+
+
+def test_chart_before_fetching_prices_names_the_funds_it_could_not_value(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", EXPORT)
+
+    assert run("--data-dir", tmp_path, "chart")[2] == (
+        "Not valued (no prices stored; run inflation-station fetch-prices): J&T MONEY A CZK OPF (CZ0008473808), "
+        "FTIF-Franklin Technology Fund-A(acc)EUR (LU0260870158), FF - World Fund A-ACC-CZK (LU1756523376), "
+        "AMUNDI FUNDS US PIONEER FUND - A EUR (C) (LU1883872332)\n"
+    )
+    assert set(traces(tmp_path / "chart.html")) == {"Amount invested"}
+
+
+def test_after_fetching_prices_the_chart_has_a_line_per_czk_fund_and_a_portfolio_line(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", EXPORT)
+    run("--data-dir", tmp_path, "fetch-prices")
+    run("--data-dir", tmp_path, "chart")
+
+    lines = traces(tmp_path / "chart.html")
+    assert set(lines) == {"Amount invested", "Portfolio value", "J&T MONEY A CZK OPF", "FF - World Fund A-ACC-CZK"}
+    # On 1 Jul 2021: 79.90 FF World units at 1 463 CZK, and 70 705 J&T Money units at 1.4089 CZK, carried
+    # forward from 30 Jun.
+    ff_world, jt_money = 79.90 * 1463, 70705 * 1.4089
+    assert lines["FF - World Fund A-ACC-CZK"]["y"][-1] == pytest.approx(ff_world)
+    assert lines["J&T MONEY A CZK OPF"]["y"][-1] == pytest.approx(jt_money)
+    assert lines["Portfolio value"]["y"][-1] == pytest.approx(ff_world + jt_money)
+    assert len(lines["Portfolio value"]["y"]) == len(lines["Amount invested"]["y"])
+
+
+def test_chart_names_the_eur_funds_it_could_not_value(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", EXPORT)
+    run("--data-dir", tmp_path, "fetch-prices")
+
+    assert run("--data-dir", tmp_path, "chart")[2] == (
+        "Not valued (priced in EUR): FTIF-Franklin Technology Fund-A(acc)EUR (LU0260870158), "
+        "AMUNDI FUNDS US PIONEER FUND - A EUR (C) (LU1883872332)\n"
+    )
 
 
 def test_amount_invested_is_a_step_line_from_the_first_trade_date_to_today(tmp_path: Path) -> None:

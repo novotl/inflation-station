@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from datetime import date
     from decimal import Decimal
 
@@ -25,3 +26,9 @@ class Purchase:
     gross_czk: Decimal
     fee: Decimal
     fee_currency: str
+
+
+def fund_names(purchases: Iterable[Purchase]) -> dict[str, str]:
+    """The name each purchased fund had in its latest Purchase, by ISIN, sorted by ISIN."""
+    latest = {p.isin: p.fund_name for p in sorted(purchases, key=lambda p: p.trade_date)}
+    return dict(sorted(latest.items()))
