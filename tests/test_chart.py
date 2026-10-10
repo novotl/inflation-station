@@ -58,14 +58,37 @@ def test_after_fetching_prices_the_chart_has_a_line_per_czk_fund_and_a_portfolio
     assert len(lines["Portfolio value"]["y"]) == len(lines["Amount invested"]["y"])
 
 
-def test_chart_names_the_eur_funds_it_could_not_value(tmp_path: Path) -> None:
+def test_chart_before_fetching_rates_names_the_eur_funds_it_could_not_value(tmp_path: Path) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
     run("--data-dir", tmp_path, "fetch-prices")
 
     assert run("--data-dir", tmp_path, "chart")[2] == (
-        "Not valued (priced in EUR): FTIF-Franklin Technology Fund-A(acc)EUR (LU0260870158), "
-        "AMUNDI FUNDS US PIONEER FUND - A EUR (C) (LU1883872332)\n"
+        "Not valued (no EUR rates stored; run inflation-station fetch-fx): FTIF-Franklin Technology Fund-A(acc)EUR "
+        "(LU0260870158), AMUNDI FUNDS US PIONEER FUND - A EUR (C) (LU1883872332)\n"
     )
+
+
+def test_after_fetching_prices_and_rates_the_chart_values_every_fund_in_czk(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", EXPORT)
+    run("--data-dir", tmp_path, "fetch-prices")
+    run("--data-dir", tmp_path, "fetch-fx")
+
+    assert run("--data-dir", tmp_path, "chart")[::2] == (0, "")  # nothing left out
+    lines = traces(tmp_path / "chart.html")
+    assert set(lines) == {
+        "Amount invested",
+        "Portfolio value",
+        "J&T MONEY A CZK OPF",
+        "FF - World Fund A-ACC-CZK",
+        "FTIF-Franklin Technology Fund-A(acc)EUR",
+        "AMUNDI FUNDS US PIONEER FUND - A EUR (C)",
+    }
+    # On 1 Jul 2021, at ČNB's 25.505 CZK per EUR: 11.15 Franklin units at 37.86 EUR, 12.07 Amundi units at 16.15 EUR.
+    franklin, amundi = 11.15 * 37.86 * 25.505, 12.07 * 16.15 * 25.505
+    assert lines["FTIF-Franklin Technology Fund-A(acc)EUR"]["y"][-1] == pytest.approx(franklin)
+    assert lines["AMUNDI FUNDS US PIONEER FUND - A EUR (C)"]["y"][-1] == pytest.approx(amundi)
+    czk_funds = 79.90 * 1463 + 70705 * 1.4089
+    assert lines["Portfolio value"]["y"][-1] == pytest.approx(czk_funds + franklin + amundi)
 
 
 def test_amount_invested_is_a_step_line_from_the_first_trade_date_to_today(tmp_path: Path) -> None:

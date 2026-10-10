@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from inflation_station.fund_price import FundPrice
+from inflation_station.fx_rate import FxRate
 from inflation_station.purchase import Purchase
 from inflation_station.valuation import timeline
 
@@ -109,16 +110,75 @@ def test_portfolio_value_is_the_sum_of_the_fund_values() -> None:
     assert t.portfolio_value == (Decimal(20), Decimal("21.5"))
 
 
-def test_funds_not_priced_in_czk_are_not_valued() -> None:
+def rate(day: date, czk_per_unit: str, currency: str = "EUR") -> FxRate:
+    return FxRate(currency=currency, day=day, czk_per_unit=Decimal(czk_per_unit))
+
+
+def test_eur_funds_are_valued_in_czk_at_the_rate_carried_forward_over_weekends() -> None:
+    t = timeline(
+        [purchase(date(2021, 6, 11), "1000", isin=EUR_FUND, units="2")],  # a Friday
+        prices=[
+            price(date(2021, 6, 11), "40", isin=EUR_FUND, currency="EUR"),
+            price(date(2021, 6, 12), "41", isin=EUR_FUND, currency="EUR"),
+            price(date(2021, 6, 14), "42", isin=EUR_FUND, currency="EUR"),
+        ],
+        rates=[rate(date(2021, 6, 10), "25"), rate(date(2021, 6, 11), "25.5"), rate(date(2021, 6, 14), "26")],
+        today=date(2021, 6, 14),
+    )
+
+    # Fri: 2 x 40 EUR x 25.5; Sat: 2 x 41 x Friday's 25.5; Sun: Saturday's price, Friday's rate; Mon: 2 x 42 x 26.
+    assert t.fund_values[EUR_FUND] == (Decimal(2040), Decimal(2091), Decimal(2091), Decimal(2184))
+    assert t.not_valued == {}
+
+
+def test_portfolio_value_counts_eur_funds_in_czk() -> None:
     t = timeline(
         [purchase(date(2021, 6, 13), "1000"), purchase(date(2021, 6, 13), "1000", isin=EUR_FUND)],
         prices=[price(date(2021, 6, 13), "10"), price(date(2021, 6, 13), "40", isin=EUR_FUND, currency="EUR")],
+        rates=[rate(date(2021, 6, 11), "25.5")],
+        today=date(2021, 6, 13),
+    )
+
+    assert t.portfolio_value == (Decimal(1030),)
+
+
+def test_a_holding_with_no_rate_yet_has_no_value() -> None:
+    t = timeline(
+        [purchase(date(2021, 6, 13), "1000", isin=EUR_FUND)],
+        prices=[price(date(2021, 6, 13), "40", isin=EUR_FUND, currency="EUR")],
+        rates=[rate(date(2021, 6, 14), "25.5")],
+        today=date(2021, 6, 14),
+    )
+
+    assert t.fund_values[EUR_FUND] == (None, Decimal(1020))
+
+
+def test_funds_priced_in_a_currency_without_rates_are_not_valued() -> None:
+    t = timeline(
+        [purchase(date(2021, 6, 13), "1000"), purchase(date(2021, 6, 13), "1000", isin=EUR_FUND)],
+        prices=[price(date(2021, 6, 13), "10"), price(date(2021, 6, 13), "40", isin=EUR_FUND, currency="EUR")],
+        rates=[rate(date(2021, 6, 13), "0.04", currency="USD")],
         today=date(2021, 6, 13),
     )
 
     assert set(t.fund_values) == {CZK_FUND}
     assert t.portfolio_value == (Decimal(10),)
-    assert t.not_valued == {EUR_FUND: "priced in EUR"}
+    assert t.not_valued == {EUR_FUND: "no EUR rates stored"}
+
+
+def test_funds_priced_in_more_than_one_currency_are_not_valued() -> None:
+    t = timeline(
+        [purchase(date(2021, 6, 13), "1000", isin=EUR_FUND)],
+        prices=[
+            price(date(2021, 6, 13), "40", isin=EUR_FUND, currency="EUR"),
+            price(date(2021, 6, 14), "1000", isin=EUR_FUND, currency="CZK"),
+        ],
+        rates=[rate(date(2021, 6, 13), "25.5")],
+        today=date(2021, 6, 14),
+    )
+
+    assert t.fund_values == {}
+    assert t.not_valued == {EUR_FUND: "priced in CZK, EUR"}
 
 
 def test_funds_without_prices_are_not_valued() -> None:

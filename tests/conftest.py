@@ -10,8 +10,12 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 CONSEQ = Path(__file__).parent / "fixtures" / "conseq"
+CNB = Path(__file__).parent / "fixtures" / "cnb"
 FUND_PAGE = "https://www.conseq.cz/investice/prehled-fondu/"
 PRICE_HISTORY = "https://www.conseq.cz/Conseq/Pricehist.ashx?productid={}&culture=cs-CZ"
+EUR_RATES = "https://api.cnb.cz/cnbapi/exrates/daily-currency-month?currency=EUR&yearMonth={}&lang=EN"
+# The months of EUR rates recorded: from the first EUR Purchase in the J&T fixture to "today".
+EUR_MONTHS = ("2021-05", "2021-06", "2021-07")
 # The recorded prices end on this day.
 TODAY = date(2021, 7, 1)
 
@@ -28,6 +32,7 @@ def recorded() -> dict[str, Path]:
     return {
         **{FUND_PAGE + slug: CONSEQ / f"{slug}.html" for slug in pages},
         **{PRICE_HISTORY.format(p): CONSEQ / f"pricehist-{p}.xlsx" for p in (9613, 5485, 8804, 9171)},
+        **{EUR_RATES.format(month): CNB / f"eur-{month}.json" for month in EUR_MONTHS},
     }
 
 
