@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import plotly.graph_objects as go
 
-from inflation_station.price_index import CSU_CPI
+from inflation_station.price_index import CSU_CPI, EUROSTAT_HICP, NAMES
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -17,9 +17,8 @@ if TYPE_CHECKING:
 
 CHART_NAME = "chart.html"
 HOVER_CZK = "%{y:,.2f} CZK"
-# The name each price index series goes by in the legend.
-INDEX_NAMES = {CSU_CPI: "ČSÚ CPI"}
-HURDLE_COLOR = "black"
+# How each price index series' published hurdle is drawn. Every estimated part is dotted; the colours tell them apart.
+HURDLE_LINES = {CSU_CPI: {"color": "black", "dash": "solid"}, EUROSTAT_HICP: {"color": "dimgray", "dash": "dash"}}
 
 
 def write_chart(timeline: Timeline, data_dir: Path) -> Path:
@@ -32,16 +31,17 @@ def write_chart(timeline: Timeline, data_dir: Path) -> Path:
         figure.add_scatter(x=timeline.dates, y=_floats(values), name=timeline.fund_names[isin])
     figure.add_scatter(x=timeline.dates, y=_floats(timeline.amount_invested), name="Amount invested", line_shape="hv")
     for series, hurdle in timeline.hurdles.items():
-        _add_hurdle(figure, timeline.dates, hurdle, INDEX_NAMES[series])
+        _add_hurdle(figure, timeline.dates, hurdle, series)
     figure.update_traces(hovertemplate=HOVER_CZK)
     path = data_dir / CHART_NAME
     figure.write_html(path, include_plotlyjs=True)
     return path
 
 
-def _add_hurdle(figure: go.Figure, dates: Sequence[date], hurdle: Hurdle, index_name: str) -> None:
-    """The published part solid; the estimated part dotted, starting where the published part ends."""
-    name = f"Inflation hurdle ({index_name})"
+def _add_hurdle(figure: go.Figure, dates: Sequence[date], hurdle: Hurdle, series: str) -> None:
+    """The published part in the series' line; the estimated part dotted, starting where the published part ends."""
+    line = HURDLE_LINES[series]
+    name = f"Inflation hurdle ({NAMES[series]})"
     published = [n for n, d in enumerate(dates) if d < hurdle.estimated_from]
     if published:
         figure.add_scatter(
@@ -49,16 +49,16 @@ def _add_hurdle(figure: go.Figure, dates: Sequence[date], hurdle: Hurdle, index_
             y=_floats([hurdle.values[n] for n in published]),
             name=name,
             legendgroup=name,
-            line={"color": HURDLE_COLOR, "dash": "solid"},
+            line=line,
         )
     estimated = [n for n, d in enumerate(dates) if d >= hurdle.estimated_from - timedelta(days=1)]
     if estimated:
         figure.add_scatter(
             x=[dates[n] for n in estimated],
             y=_floats([hurdle.values[n] for n in estimated]),
-            name=f"Inflation hurdle ({index_name}, estimated)",
+            name=f"Inflation hurdle ({NAMES[series]}, estimated)",
             legendgroup=name,
-            line={"color": HURDLE_COLOR, "dash": "dot"},
+            line={**line, "dash": "dot"},
         )
 
 

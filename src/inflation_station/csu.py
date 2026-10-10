@@ -44,7 +44,7 @@ def cpi() -> list[IndexLevel]:
     try:
         return _chain(_changes(web.fetch(URL)))
     except (csv.Error, ValueError, KeyError, ArithmeticError) as e:
-        msg = f"cannot read the ČSÚ CPI {URL}: {e}"
+        msg = f"cannot read {URL}: {e}"
         raise InflationStationError(msg) from e
 
 
