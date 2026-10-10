@@ -13,8 +13,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 MONTH_URL = "https://api.cnb.cz/cnbapi/exrates/daily-currency-month?currency={currency}&yearMonth={month}&lang=EN"
-# ČNB publishes no rates on weekends and holidays; a week back always reaches a business day.
-_LONGEST_GAP = timedelta(days=7)
 
 
 def months_to_fetch(first_held: date, today: date, stored: Iterable[date]) -> list[date]:
@@ -25,8 +23,7 @@ def months_to_fetch(first_held: date, today: date, stored: Iterable[date]) -> li
     """
     stored_months = {d.replace(day=1) for d in stored}
     latest = max(stored_months, default=None)
-    # The rate valid on the first day held may be from the month before, if the month starts with a holiday.
-    month = (first_held - _LONGEST_GAP).replace(day=1)
+    month = first_held.replace(day=1)
     months = []
     while month <= today:
         if month not in stored_months or month == latest:
