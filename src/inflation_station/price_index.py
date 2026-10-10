@@ -7,6 +7,10 @@ if TYPE_CHECKING:
 
 # ČSÚ's national CPI, the headline "míra inflace".
 CSU_CPI = "csu_cpi"
+# Eurostat's HICP for Czechia, harmonised across the EU.
+EUROSTAT_HICP = "eurostat_hicp"
+# The name each series goes by, in messages and the chart's legend.
+NAMES = {CSU_CPI: "ČSÚ CPI", EUROSTAT_HICP: "Eurostat HICP"}
 
 
 @dataclass(frozen=True)

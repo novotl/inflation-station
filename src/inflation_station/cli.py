@@ -3,10 +3,11 @@ from typing import TYPE_CHECKING
 
 import click
 
-from inflation_station import clock, cnb, conseq, csu, jt
+from inflation_station import clock, cnb, conseq, csu, eurostat, jt
 from inflation_station.chart import write_chart
 from inflation_station.errors import InflationStationError
 from inflation_station.price_check import price_warnings
+from inflation_station.price_index import CSU_CPI, EUROSTAT_HICP, NAMES
 from inflation_station.purchase import first_trade_dates, fund_names
 from inflation_station.settings import Settings
 from inflation_station.store import Store, database_exists
@@ -89,13 +90,24 @@ def fetch_fx(data_dir: Path) -> None:
 @main.command("fetch-cpi")
 @click.pass_obj
 def fetch_cpi(data_dir: Path) -> None:
-    """Download ČSÚ's national CPI, for the inflation hurdle."""
-    try:
-        store = Store(data_dir)
-        result = store.add_index_levels(csu.continuing(csu.cpi(), store.index_levels()))
-    except InflationStationError as e:
-        raise click.ClickException(str(e)) from e
-    click.echo(f"ČSÚ CPI: {result.added} months added, {result.already_present} already present.")
+    """Download ČSÚ's national CPI and Eurostat's HICP for Czechia, for the inflation hurdles."""
+    store = Store(data_dir)
+    fetchers = {
+        CSU_CPI: lambda: csu.continuing(csu.cpi(), store.index_levels()),
+        EUROSTAT_HICP: eurostat.hicp,
+    }
+    failed = False
+    for series, fetch in fetchers.items():
+        # Stored series by series, so one failing keeps the other.
+        try:
+            result = store.add_index_levels(fetch())
+        except InflationStationError as e:
+            click.echo(f"Error: {NAMES[series]}: {e}", err=True)
+            failed = True
+            continue
+        click.echo(f"{NAMES[series]}: {result.added} months added, {result.already_present} already present.")
+    if failed:
+        raise click.exceptions.Exit(1)
 
 
 @main.command()

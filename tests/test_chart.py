@@ -150,3 +150,36 @@ def test_after_fetching_cpi_the_chart_has_a_solid_hurdle_line_and_a_dotted_estim
         + 5000 * may ** (1 - 13 / 30)
         + 13000 * may ** (1 - 14 / 30)
     )
+
+
+def test_after_fetching_cpi_the_chart_has_a_dashed_eurostat_hurdle_line_and_a_dotted_estimated_tail(
+    tmp_path: Path,
+) -> None:
+    run("--data-dir", tmp_path, "import", EXPORT)
+    run("--data-dir", tmp_path, "fetch-cpi")
+    run("--data-dir", tmp_path, "chart")
+
+    lines = traces(tmp_path / "chart.html")
+    published, estimated = (
+        lines["Inflation hurdle (Eurostat HICP)"],
+        lines["Inflation hurdle (Eurostat HICP, estimated)"],
+    )
+    assert published["line"]["dash"] == "dash"
+    assert estimated["line"]["dash"] == "dot"
+    # Told apart from the ČSÚ lines by colour too, as both estimated tails are dotted.
+    assert (
+        published["line"]["color"] == estimated["line"]["color"] != lines["Inflation hurdle (ČSÚ CPI)"]["line"]["color"]
+    )
+    # Eurostat too had published May 2021 last by "today", 1 Jul 2021.
+    assert (published["x"][0], published["x"][-1]) == ("2021-04-28", "2021-05-01")
+    assert (estimated["x"][0], estimated["x"][-1]) == ("2021-05-01", "2021-07-01")
+    # The index levels of April and May 2021; as for ČSÚ, with May's change repeated for June and July.
+    may = 114.14 / 114.02
+    assert published["y"][-1] == pytest.approx(104000 * may ** (3 / 30) + 100000 * may ** (1 / 30))
+    assert estimated["y"][-1] == pytest.approx(
+        104000 * may ** (2 + 3 / 30)
+        + 100000 * may ** (2 + 1 / 30)
+        + 13000 * may ** (2 - 17 / 31)
+        + 5000 * may ** (1 - 13 / 30)
+        + 13000 * may ** (1 - 14 / 30)
+    )
