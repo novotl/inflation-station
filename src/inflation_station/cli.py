@@ -6,6 +6,7 @@ import click
 from inflation_station import clock, cnb, conseq, csu, eurostat, jt
 from inflation_station.chart import write_chart
 from inflation_station.errors import InflationStationError
+from inflation_station.freshness import out_of_date
 from inflation_station.price_check import price_warnings
 from inflation_station.price_index import CSU_CPI, EUROSTAT_HICP, NAMES
 from inflation_station.purchase import first_trade_dates, fund_names
@@ -118,17 +119,19 @@ def chart(data_dir: Path) -> None:
         purchases = _stored_purchases(data_dir, "to chart")
         store = Store(data_dir)
         prices = store.fund_prices()
-        t = timeline(
-            purchases,
-            prices=prices,
-            rates=store.fx_rates(),
-            index_levels=store.index_levels(),
-            today=clock.today(),
-        )
+        rates = store.fx_rates()
+        index_levels = store.index_levels()
+        today = clock.today()
+        t = timeline(purchases, prices=prices, rates=rates, index_levels=index_levels, today=today)
         path = write_chart(t, data_dir)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
     _report_not_valued(t, {p.currency for p in prices})
+    # Only a warning: the chart is still right up to each series' last point.
+    for warning in out_of_date(
+        prices=prices, rates=rates, index_levels=index_levels, fund_names=t.fund_names, today=today
+    ):
+        click.echo(f"Out of date: {warning}", err=True)
     click.echo(f"Chart written to {path}")
 
 

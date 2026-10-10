@@ -1,10 +1,12 @@
 import json
 import socket
+from datetime import date
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
+from inflation_station import clock
 from inflation_station.cli import main
 
 EXPORT = Path(__file__).parent / "fixtures" / "jt_export.csv"
@@ -182,4 +184,54 @@ def test_after_fetching_cpi_the_chart_has_a_dashed_eurostat_hurdle_line_and_a_do
         + 13000 * may ** (2 - 17 / 31)
         + 5000 * may ** (1 - 13 / 30)
         + 13000 * may ** (1 - 14 / 30)
+    )
+
+
+def fetch_everything(data_dir: Path) -> None:
+    run("--data-dir", data_dir, "import", EXPORT)
+    for command in ("fetch-prices", "fetch-fx", "fetch-cpi"):
+        run("--data-dir", data_dir, command)
+
+
+def test_chart_with_fresh_data_warns_of_nothing(tmp_path: Path) -> None:
+    fetch_everything(tmp_path)
+
+    assert run("--data-dir", tmp_path, "chart")[::2] == (0, "")
+
+
+def test_chart_names_each_out_of_date_series_and_its_last_date_but_is_still_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fetch_everything(tmp_path)
+    monkeypatch.setattr(clock, "today", lambda: date(2021, 8, 2))
+
+    exit_code, stdout, stderr = run("--data-dir", tmp_path, "chart")
+
+    assert (exit_code, stdout) == (0, f"Chart written to {tmp_path / 'chart.html'}\n")
+    assert stderr == (
+        "Out of date: J&T MONEY A CZK OPF (CZ0008473808) prices end on 2021-06-30; run inflation-station fetch-prices\n"
+        "Out of date: FTIF-Franklin Technology Fund-A(acc)EUR (LU0260870158) prices end on 2021-07-01; "
+        "run inflation-station fetch-prices\n"
+        "Out of date: FF - World Fund A-ACC-CZK (LU1756523376) prices end on 2021-07-01; "
+        "run inflation-station fetch-prices\n"
+        "Out of date: AMUNDI FUNDS US PIONEER FUND - A EUR (C) (LU1883872332) prices end on 2021-07-01; "
+        "run inflation-station fetch-prices\n"
+        "Out of date: EUR rates end on 2021-07-01; run inflation-station fetch-fx\n"
+        "Out of date: ČSÚ CPI ends with 2021-05; run inflation-station fetch-cpi\n"
+        "Out of date: Eurostat HICP ends with 2021-05; run inflation-station fetch-cpi\n"
+    )
+    assert traces(tmp_path / "chart.html")["Amount invested"]["x"][-1] == "2021-08-02"
+
+
+def test_chart_warns_only_of_the_series_that_are_out_of_date(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fetch_everything(tmp_path)
+    # Five business days after J&T Money's last price on Wed 30 Jun, but only four after the others' on Thu 1 Jul.
+    monkeypatch.setattr(clock, "today", lambda: date(2021, 7, 8))
+
+    assert run("--data-dir", tmp_path, "chart")[::2] == (
+        0,
+        (
+            "Out of date: J&T MONEY A CZK OPF (CZ0008473808) prices end on 2021-06-30; "
+            "run inflation-station fetch-prices\n"
+        ),
     )
