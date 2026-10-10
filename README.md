@@ -27,4 +27,5 @@ All data lives in the repo's gitignored `data/` directory unless you pass `--dat
 
 ```sh
 uv run inflation-station import data/jt_export.csv   # load a J&T transaction export; safe to re-run
+uv run inflation-station chart                       # write data/chart.html; open it in a browser
 ```
