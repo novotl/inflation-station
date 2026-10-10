@@ -5,8 +5,10 @@ description = "Track investment performance against inflation."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "alembic>=1.20.0",
     "click>=8.5.0",
     "pydantic-settings>=2.15.0",
+    "sqlalchemy>=2.1.4",
 ]
 
 [project.scripts]
@@ -43,6 +45,10 @@ ignore = [
     "S101",   # asserts are how pytest works
     "INP001", # tests/ is intentionally not a package
 ]
+"src/inflation_station/migrations/**" = [
+    "INP001", # Alembic loads migrations by path, not as a package
+    "TC003",  # revision files follow Alembic's template
+]
 
 [tool.deptry]
 known_first_party = ["inflation_station"] # src/ layout isn't detected on its own
@@ -55,3 +61,8 @@ testpaths = ["tests"]
 addopts = ["--strict-markers", "--strict-config", "--cov=inflation_station", "--cov-report=term-missing"]
 xfail_strict = true
 filterwarnings = ["error"]
+
+[tool.alembic]
+# For `uv run alembic ...` during development; the app configures Alembic itself (store.migrate).
+script_location = "%(here)s/src/inflation_station/migrations"
+file_template = "%%(rev)s_%%(slug)s"

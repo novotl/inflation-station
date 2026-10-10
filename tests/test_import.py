@@ -1,10 +1,13 @@
 from pathlib import Path
 
 import pytest
+from alembic.autogenerate import compare_metadata
+from alembic.migration import MigrationContext
 from click.testing import CliRunner
 
 from inflation_station.cli import main
 from inflation_station.settings import Settings
+from inflation_station.store import Base, Store, database_url, engine
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPORT = FIXTURES / "jt_export.csv"
@@ -128,3 +131,10 @@ def test_data_dir_can_be_set_in_env_file(tmp_path: Path, monkeypatch: pytest.Mon
     env_file.write_text(f"INFLATION_STATION_DATA_DIR={tmp_path / 'from-dotenv'}\n", encoding="utf-8")
 
     assert Settings(_env_file=env_file).data_dir == tmp_path / "from-dotenv"
+
+
+def test_migrations_match_the_models(tmp_path: Path) -> None:
+    Store(tmp_path)
+
+    with engine(database_url(tmp_path)).connect() as connection:
+        assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []

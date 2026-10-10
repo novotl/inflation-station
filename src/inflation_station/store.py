@@ -1,35 +1,85 @@
-import sqlite3
-from contextlib import closing
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from pathlib import Path
+from typing import TYPE_CHECKING, override
+
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import DateTime, Dialect, Engine, String, UniqueConstraint, create_engine, select, tuple_
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from sqlalchemy.pool import NullPool
+from sqlalchemy.types import TypeDecorator
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from pathlib import Path
 
     from inflation_station.purchase import Purchase
 
 DATABASE_NAME = "inflation-station.sqlite"
+MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS purchase (
-    platform TEXT NOT NULL,
-    account_id TEXT NOT NULL,
-    source_row_id TEXT NOT NULL,
-    isin TEXT NOT NULL,
-    fund_name TEXT NOT NULL,
-    trade_date TEXT NOT NULL,
-    units TEXT NOT NULL,
-    unit_price TEXT NOT NULL,
-    unit_price_currency TEXT NOT NULL,
-    gross_czk TEXT NOT NULL,
-    fee TEXT NOT NULL,
-    fee_currency TEXT NOT NULL,
-    imported_at TEXT NOT NULL,
-    UNIQUE (platform, account_id, source_row_id)
-);
-"""
+
+class DecimalText(TypeDecorator[Decimal]):
+    """A Decimal stored as text, so amounts never pass through a float."""
+
+    impl = String
+    cache_ok = True
+
+    @override
+    def process_bind_param(self, value: Decimal | None, dialect: Dialect) -> str | None:
+        return None if value is None else str(value)
+
+    @override
+    def process_result_value(self, value: str | None, dialect: Dialect) -> Decimal | None:
+        return None if value is None else Decimal(value)
+
+
+class UTCDateTime(TypeDecorator[datetime]):
+    """An aware datetime stored as a naive UTC timestamp. Naive datetimes are rejected."""
+
+    impl = DateTime
+    cache_ok = True
+
+    @override
+    def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            msg = f"refusing to store naive datetime {value}"
+            raise ValueError(msg)
+        return value.astimezone(UTC).replace(tzinfo=None)
+
+    @override
+    def process_result_value(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        return None if value is None else value.replace(tzinfo=UTC)
+
+
+class Base(DeclarativeBase):
+    type_annotation_map = {  # noqa: RUF012 - SQLAlchemy reads this class attribute
+        Decimal: DecimalText,
+        datetime: UTCDateTime,
+    }
+
+
+class PurchaseRecord(Base):
+    __tablename__ = "purchase"
+    __table_args__ = (UniqueConstraint("platform", "account_id", "source_row_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    platform: Mapped[str]
+    account_id: Mapped[str]
+    source_row_id: Mapped[str]
+    isin: Mapped[str]
+    fund_name: Mapped[str]
+    trade_date: Mapped[date]
+    units: Mapped[Decimal]
+    unit_price: Mapped[Decimal]
+    unit_price_currency: Mapped[str]
+    gross_czk: Mapped[Decimal]
+    fee: Mapped[Decimal]
+    fee_currency: Mapped[str]
+    imported_at: Mapped[datetime]
 
 
 @dataclass(frozen=True)
@@ -38,49 +88,69 @@ class PurchasesAdded:
     already_present: int
 
 
-class Store:
-    """The SQLite database in the data directory. The only place that issues SQL.
+def database_url(data_dir: Path) -> str:
+    return f"sqlite:///{data_dir / DATABASE_NAME}"
 
-    Amounts are stored as decimal text, never as floats.
+
+def engine(url: str) -> Engine:
+    # A short-lived CLI gains nothing from pooling; NullPool closes each connection when it's released.
+    return create_engine(url, poolclass=NullPool)
+
+
+def migrate(url: str) -> None:
+    """Bring the database at `url` up to the latest schema."""
+    config = Config(attributes={"url": url})
+    config.set_main_option("script_location", str(MIGRATIONS_DIR))
+    command.upgrade(config, "head")
+
+
+class Store:
+    """The SQLite database in the data directory. The only place that talks to the database.
+
+    Amounts are stored as decimal text, never as floats; timestamps as UTC.
     """
 
     def __init__(self, data_dir: Path) -> None:
         data_dir.mkdir(parents=True, exist_ok=True)
-        self._path = data_dir / DATABASE_NAME
-        with closing(sqlite3.connect(self._path)) as connection:
-            connection.executescript(SCHEMA)
+        url = database_url(data_dir)
+        migrate(url)
+        self._engine = engine(url)
 
     def add_purchases(self, purchases: Iterable[Purchase]) -> PurchasesAdded:
-        imported_at = datetime.now(UTC).isoformat()
-        added = already_present = 0
-        with closing(sqlite3.connect(self._path)) as connection, connection:
+        imported_at = datetime.now(UTC)
+        purchases = list(purchases)
+        key_columns = (PurchaseRecord.platform, PurchaseRecord.account_id, PurchaseRecord.source_row_id)
+        with Session(self._engine) as session, session.begin():
+            stored = session.execute(select(*key_columns).where(tuple_(*key_columns).in_([_key(p) for p in purchases])))
+            seen = {tuple(row) for row in stored}
+            added = already_present = 0
             for purchase in purchases:
-                row = _purchase_row(purchase) | {"imported_at": imported_at}
-                columns = ", ".join(row)
-                placeholders = ", ".join(f":{c}" for c in row)
-                cursor = connection.execute(
-                    f"INSERT INTO purchase ({columns}) VALUES ({placeholders}) ON CONFLICT DO NOTHING",  # noqa: S608 - column names are ours
-                    row,
-                )
-                if cursor.rowcount:
-                    added += 1
-                else:
+                if _key(purchase) in seen:
                     already_present += 1
+                    continue
+                seen.add(_key(purchase))
+                session.add(_record(purchase, imported_at))
+                added += 1
         return PurchasesAdded(added=added, already_present=already_present)
 
 
-def _purchase_row(p: Purchase) -> dict[str, str]:
-    return {
-        "platform": p.platform,
-        "account_id": p.account_id,
-        "source_row_id": p.source_row_id,
-        "isin": p.isin,
-        "fund_name": p.fund_name,
-        "trade_date": p.trade_date.isoformat(),
-        "units": str(p.units),
-        "unit_price": str(p.unit_price),
-        "unit_price_currency": p.unit_price_currency,
-        "gross_czk": str(p.gross_czk),
-        "fee": str(p.fee),
-        "fee_currency": p.fee_currency,
-    }
+def _key(p: Purchase) -> tuple[str, str, str]:
+    return (p.platform, p.account_id, p.source_row_id)
+
+
+def _record(p: Purchase, imported_at: datetime) -> PurchaseRecord:
+    return PurchaseRecord(
+        platform=p.platform,
+        account_id=p.account_id,
+        source_row_id=p.source_row_id,
+        isin=p.isin,
+        fund_name=p.fund_name,
+        trade_date=p.trade_date,
+        units=p.units,
+        unit_price=p.unit_price,
+        unit_price_currency=p.unit_price_currency,
+        gross_czk=p.gross_czk,
+        fee=p.fee,
+        fee_currency=p.fee_currency,
+        imported_at=imported_at,
+    )
