@@ -8,7 +8,8 @@ from inflation_station.errors import InflationStationError
 from inflation_station.store import Store
 
 DATA_DIR_ENV = "INFLATION_STATION_DATA_DIR"
-DEFAULT_DATA_DIR = Path("data")
+# The gitignored data/ at the repo root; the tool runs from its checkout (`uv run`).
+DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -26,7 +27,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data-dir",
         type=Path,
-        help=f"where the database lives (default: ${DATA_DIR_ENV}, else ./{DEFAULT_DATA_DIR})",
+        help=f"where the database lives (default: ${DATA_DIR_ENV}, else {DEFAULT_DATA_DIR})",
     )
     commands = parser.add_subparsers(required=True, metavar="command")
 

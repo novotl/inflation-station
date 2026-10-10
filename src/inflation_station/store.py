@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS purchase (
 
 
 @dataclass(frozen=True)
-class AddResult:
+class PurchasesAdded:
     added: int
     already_present: int
 
@@ -50,31 +50,37 @@ class Store:
         with closing(sqlite3.connect(self._path)) as connection:
             connection.executescript(SCHEMA)
 
-    def add_purchases(self, purchases: Iterable[Purchase]) -> AddResult:
+    def add_purchases(self, purchases: Iterable[Purchase]) -> PurchasesAdded:
         imported_at = datetime.now(UTC).isoformat()
         added = already_present = 0
         with closing(sqlite3.connect(self._path)) as connection, connection:
-            for p in purchases:
+            for purchase in purchases:
+                row = _purchase_row(purchase) | {"imported_at": imported_at}
+                columns = ", ".join(row)
+                placeholders = ", ".join(f":{c}" for c in row)
                 cursor = connection.execute(
-                    "INSERT INTO purchase VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
-                    (
-                        p.platform,
-                        p.account_id,
-                        p.source_row_id,
-                        p.isin,
-                        p.fund_name,
-                        p.trade_date.isoformat(),
-                        str(p.units),
-                        str(p.unit_price),
-                        p.unit_price_currency,
-                        str(p.gross_czk),
-                        str(p.fee),
-                        p.fee_currency,
-                        imported_at,
-                    ),
+                    f"INSERT INTO purchase ({columns}) VALUES ({placeholders}) ON CONFLICT DO NOTHING",  # noqa: S608 - column names are ours
+                    row,
                 )
                 if cursor.rowcount:
                     added += 1
                 else:
                     already_present += 1
-        return AddResult(added=added, already_present=already_present)
+        return PurchasesAdded(added=added, already_present=already_present)
+
+
+def _purchase_row(p: Purchase) -> dict[str, str]:
+    return {
+        "platform": p.platform,
+        "account_id": p.account_id,
+        "source_row_id": p.source_row_id,
+        "isin": p.isin,
+        "fund_name": p.fund_name,
+        "trade_date": p.trade_date.isoformat(),
+        "units": str(p.units),
+        "unit_price": str(p.unit_price),
+        "unit_price_currency": p.unit_price_currency,
+        "gross_czk": str(p.gross_czk),
+        "fee": str(p.fee),
+        "fee_currency": p.fee_currency,
+    }

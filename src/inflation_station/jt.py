@@ -12,25 +12,37 @@ from inflation_station.purchase import Purchase
 if TYPE_CHECKING:
     from pathlib import Path
 
-PURCHASE = "Investice klienta (vklad)"
-CASH_DEPOSIT = "Vklad - vyrovnání nákupu CP klienta - Vklad pro obchod"
+PURCHASE_MOVEMENT = "Investice klienta (vklad)"
+CASH_DEPOSIT_MOVEMENT = "Vklad - vyrovnání nákupu CP klienta - Vklad pro obchod"
 
+# The columns read from the export, each named once.
 MOVEMENT_TYPE = "Typ pohybu"
 ROW_ID = "ID pohybu"
+ACCOUNT_ID = "Portfolio"
+ISIN = "ISIN"
+FUND_NAME = "Název CP"
+TRADE_DATE = "Datum a čas zobchodování"
+UNITS = "Počet ks"
+UNIT_PRICE = "Hodnota za ks (v měně obchodu)"
+UNIT_PRICE_CURRENCY = "Měna kusové hodnoty (v měně obchodu)"
+PAYMENT = "Objem v měně platby"
+PAYMENT_CURRENCY = "Měna platby"
+FEE = "Poplatek (v měně obchodu)"
+FEE_CURRENCY = "Měna poplatku (v měně obchodu)"
 COLUMNS = (
     MOVEMENT_TYPE,
     ROW_ID,
-    "Účet",
-    "ISIN",
-    "Název CP",
-    "Datum a čas zobchodování",
-    "Počet ks",
-    "Hodnota za ks (v měně obchodu)",
-    "Měna kusové hodnoty (v měně obchodu)",
-    "Objem v měně platby",
-    "Měna platby",
-    "Poplatek (v měně obchodu)",
-    "Měna poplatku (v měně obchodu)",
+    ACCOUNT_ID,
+    ISIN,
+    FUND_NAME,
+    TRADE_DATE,
+    UNITS,
+    UNIT_PRICE,
+    UNIT_PRICE_CURRENCY,
+    PAYMENT,
+    PAYMENT_CURRENCY,
+    FEE,
+    FEE_CURRENCY,
 )
 
 # Thousands separators may be a plain, no-break or narrow no-break space.
@@ -68,28 +80,28 @@ def read_export(path: Path) -> list[Purchase]:
 
 def _purchase(row: dict[str, str]) -> Purchase | None:
     movement_type = row[MOVEMENT_TYPE]
-    if movement_type == CASH_DEPOSIT:
+    if movement_type == CASH_DEPOSIT_MOVEMENT:
         return None
-    if movement_type != PURCHASE:
+    if movement_type != PURCHASE_MOVEMENT:
         msg = f"unknown movement type {movement_type!r}"
         raise RowError(msg)
-    if row["Měna platby"] != "CZK":
-        msg = f"payment currency is {row['Měna platby']!r}, expected 'CZK'"
+    if row[PAYMENT_CURRENCY] != "CZK":
+        msg = f"payment currency is {row[PAYMENT_CURRENCY]!r}, expected 'CZK'"
         raise RowError(msg)
     return Purchase(
         platform="jt",
-        account_id=row["Účet"],
+        account_id=row[ACCOUNT_ID],
         source_row_id=row[ROW_ID],
-        isin=row["ISIN"],
-        fund_name=row["Název CP"],
-        trade_date=_date(row, "Datum a čas zobchodování"),
-        units=_decimal(row, "Počet ks"),
-        unit_price=_decimal(row, "Hodnota za ks (v měně obchodu)"),
-        unit_price_currency=row["Měna kusové hodnoty (v měně obchodu)"],
+        isin=row[ISIN],
+        fund_name=row[FUND_NAME],
+        trade_date=_date(row, TRADE_DATE),
+        units=_decimal(row, UNITS),
+        unit_price=_decimal(row, UNIT_PRICE),
+        unit_price_currency=row[UNIT_PRICE_CURRENCY],
         # Paid amounts are negative; the gross amount includes the fee.
-        gross_czk=-_decimal(row, "Objem v měně platby"),
-        fee=_decimal(row, "Poplatek (v měně obchodu)"),
-        fee_currency=row["Měna poplatku (v měně obchodu)"],
+        gross_czk=-_decimal(row, PAYMENT),
+        fee=_decimal(row, FEE),
+        fee_currency=row[FEE_CURRENCY],
     )
 
 
