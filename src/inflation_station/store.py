@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -11,10 +11,11 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.pool import NullPool
 from sqlalchemy.types import TypeDecorator
 
+from inflation_station.purchase import Purchase
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from inflation_station.purchase import Purchase
 
 DATABASE_NAME = "inflation-station.sqlite"
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
@@ -88,6 +89,10 @@ class PurchasesAdded:
     already_present: int
 
 
+def database_exists(data_dir: Path) -> bool:
+    return (data_dir / DATABASE_NAME).exists()
+
+
 def database_url(data_dir: Path) -> str:
     return f"sqlite:///{data_dir / DATABASE_NAME}"
 
@@ -133,6 +138,10 @@ class Store:
                 added += 1
         return PurchasesAdded(added=added, already_present=already_present)
 
+    def purchases(self) -> list[Purchase]:
+        with Session(self._engine) as session:
+            return [_purchase(record) for record in session.scalars(select(PurchaseRecord))]
+
 
 def _key(p: Purchase) -> tuple[str, str, str]:
     return (p.platform, p.account_id, p.source_row_id)
@@ -154,3 +163,7 @@ def _record(p: Purchase, imported_at: datetime) -> PurchaseRecord:
         fee_currency=p.fee_currency,
         imported_at=imported_at,
     )
+
+
+def _purchase(r: PurchaseRecord) -> Purchase:
+    return Purchase(**{f.name: getattr(r, f.name) for f in fields(Purchase)})
