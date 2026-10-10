@@ -6,6 +6,7 @@ import click
 from inflation_station import clock, conseq, jt
 from inflation_station.chart import write_chart
 from inflation_station.errors import InflationStationError
+from inflation_station.price_check import price_warnings
 from inflation_station.purchase import fund_names
 from inflation_station.settings import Settings
 from inflation_station.store import Store, database_exists
@@ -44,7 +45,8 @@ def import_(data_dir: Path, csv: Path) -> None:
 def fetch_prices(data_dir: Path) -> None:
     """Download the daily prices of every purchased fund from Conseq."""
     try:
-        funds = fund_names(_stored_purchases(data_dir, "to fetch prices for"))
+        purchases = _stored_purchases(data_dir, "to fetch prices for")
+        funds = fund_names(purchases)
         pages = conseq.fund_pages(funds)
         store = Store(data_dir)
         for isin, page in pages.items():
@@ -53,8 +55,11 @@ def fetch_prices(data_dir: Path) -> None:
             click.echo(
                 f"{funds[isin]} ({isin}): {result.added} prices added, {result.already_present} already present."
             )
+        warnings = price_warnings(purchases, store.fund_prices())
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
+    for warning in warnings:
+        click.echo(f"Warning: {warning}", err=True)
 
 
 @main.command()

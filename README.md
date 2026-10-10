@@ -31,4 +31,4 @@ uv run inflation-station fetch-prices                # download fund prices from
 uv run inflation-station chart                       # write data/chart.html; open it in a browser
 ```
 
-`fetch-prices` finds each fund's Conseq page in `src/inflation_station/conseq_funds.toml`. To add a fund, put its ISIN and the URL of its page on [conseq.cz](https://www.conseq.cz/investice/prehled-fondu) there. Funds priced in EUR aren't valued on the chart yet.
+`fetch-prices` finds each fund's Conseq page in `src/inflation_station/conseq_funds.toml`. To add a fund, put its ISIN and the URL of its page on [conseq.cz](https://www.conseq.cz/investice/prehled-fondu) there. Funds priced in EUR aren't valued on the chart yet. After fetching, it compares each Purchase's unit price from the export with Conseq's price on the trade date and warns when they are in different currencies or differ by more than 0.5 % of Conseq's price; the warning changes nothing and Conseq's price is what the chart uses.
