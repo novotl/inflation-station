@@ -2,6 +2,7 @@ import json
 import re
 import zipfile
 from pathlib import Path
+from unittest.mock import ANY
 
 import pytest
 from click.testing import CliRunner
@@ -97,7 +98,7 @@ def test_a_fund_page_showing_another_isin_fails_naming_both(tmp_path: Path, reco
 def test_refetching_keeps_stored_prices_when_conseq_changes_them(tmp_path: Path, recorded: dict[str, Path]) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
     run("--data-dir", tmp_path, "fetch-prices")
-    recorded[FF_WORLD_PRICES] = with_every_price_set_to_1(recorded[FF_WORLD_PRICES], tmp_path / "changed.xlsx")
+    recorded[FF_WORLD_PRICES] = with_every_price_set_to("1", recorded[FF_WORLD_PRICES], tmp_path / "changed.xlsx")
 
     run("--data-dir", tmp_path, "fetch-prices")
     run("--data-dir", tmp_path, "chart")
@@ -106,14 +107,14 @@ def test_refetching_keeps_stored_prices_when_conseq_changes_them(tmp_path: Path,
     assert traces(tmp_path / "chart.html")["FF - World Fund A-ACC-CZK"]["y"][-1] == pytest.approx(79.90 * 1463)
 
 
-def with_every_price_set_to_1(xlsx: Path, changed: Path) -> Path:
-    """A copy of the price history `xlsx` at `changed`, as if Conseq had changed every price to 1."""
+def with_every_price_set_to(price: str, xlsx: Path, changed: Path) -> Path:
+    """A copy of the price history `xlsx` at `changed`, as if Conseq had changed every price to `price`."""
     sheet = "xl/worksheets/sheet1.xml"
     with zipfile.ZipFile(xlsx) as original, zipfile.ZipFile(changed, "w") as copy:
         for name in original.namelist():
             data = original.read(name)
             if name == sheet:
-                data = re.sub(rb'(<c r="B(?!1")\d+"[^>]*><v>)[^<]*', rb"\g<1>1", data)
+                data = re.sub(rb'(<c r="B(?!1")\d+"[^>]*><v>)[^<]*', rb"\g<1>" + price.encode(), data)
             copy.writestr(name, data)
     return changed
 
@@ -140,3 +141,78 @@ def test_a_price_history_that_is_not_a_spreadsheet_fails_naming_its_url(
         1,
         f"Error: cannot read the price history {FF_WORLD_PRICES}: File is not a zip file\n",
     )
+
+
+def with_ff_world_bought_at(price: str, tmp_path: Path, currency: str = "CZK") -> Path:
+    """The fixture export, with the 15 Jun 2021 FF World Purchase (Conseq: 1 436 CZK) at `price` `currency` instead."""
+    export = tmp_path / "changed.csv"
+    original = EXPORT.read_text(encoding="utf-8")
+    export.write_text(original.replace('"1 436,00";CZK', f'"{price}";{currency}'), encoding="utf-8")
+    return export
+
+
+def test_a_purchase_price_more_than_half_a_percent_off_conseq_is_warned_about(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", with_ff_world_bought_at("1 444,00", tmp_path))
+
+    assert run("--data-dir", tmp_path, "fetch-prices") == (
+        0,
+        report(first_fetch=True),
+        (
+            "Warning: FF - World Fund A-ACC-CZK (LU1756523376) bought on 2021-06-15 at 1444.00 CZK in the export, "
+            "but Conseq's price that day is 1436 CZK (0.56 % off).\n"
+        ),
+    )
+
+
+def test_a_purchase_priced_in_another_currency_than_conseq_is_warned_about(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", with_ff_world_bought_at("1 436,00", tmp_path, currency="EUR"))
+
+    assert run("--data-dir", tmp_path, "fetch-prices") == (
+        0,
+        report(first_fetch=True),
+        (
+            "Warning: FF - World Fund A-ACC-CZK (LU1756523376) bought on 2021-06-15 at 1436.00 EUR in the export, "
+            "but Conseq's price that day is 1436 CZK (a different currency).\n"
+        ),
+    )
+
+
+def test_a_purchase_price_within_half_a_percent_of_conseq_is_not_warned_about(tmp_path: Path) -> None:
+    # 1 443 is 0.49 % above Conseq's 1 436.
+    run("--data-dir", tmp_path, "import", with_ff_world_bought_at("1 443,00", tmp_path))
+
+    assert run("--data-dir", tmp_path, "fetch-prices") == (0, report(first_fetch=True), "")
+
+
+def test_the_warning_changes_no_data(tmp_path: Path) -> None:
+    warned, plain = tmp_path / "warned", tmp_path / "plain"
+    run("--data-dir", warned, "import", with_ff_world_bought_at("1 444,00", tmp_path))
+    run("--data-dir", plain, "import", EXPORT)
+
+    for data_dir in (warned, plain):
+        run("--data-dir", data_dir, "fetch-prices")
+        run("--data-dir", data_dir, "chart")
+
+    # Valued at Conseq's prices either way, and no price stored differently.
+    assert traces(warned / "chart.html") == traces(plain / "chart.html")
+    assert run("--data-dir", warned, "fetch-prices") == (0, report(first_fetch=False), ANY)
+
+
+def test_a_purchase_on_a_day_without_a_conseq_price_is_not_checked(tmp_path: Path) -> None:
+    # Saturday 19 Jun 2021, when Conseq has no price, at a price far from any Conseq price.
+    export = with_ff_world_bought_at("9 999,00", tmp_path)
+    saturday = "00:00 19.06.2021;Investice klienta (vklad);FF - World"
+    export.write_text(
+        export.read_text(encoding="utf-8").replace("00:00 15.06.2021;Investice klienta (vklad);FF - World", saturday),
+        encoding="utf-8",
+    )
+    run("--data-dir", tmp_path, "import", export)
+
+    assert run("--data-dir", tmp_path, "fetch-prices") == (0, report(first_fetch=True), "")
+
+
+def test_a_conseq_price_of_zero_is_not_checked(tmp_path: Path, recorded: dict[str, Path]) -> None:
+    recorded[FF_WORLD_PRICES] = with_every_price_set_to("0", recorded[FF_WORLD_PRICES], tmp_path / "zero.xlsx")
+    run("--data-dir", tmp_path, "import", EXPORT)
+
+    assert run("--data-dir", tmp_path, "fetch-prices") == (0, report(first_fetch=True), "")
