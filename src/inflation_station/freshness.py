@@ -35,7 +35,9 @@ def out_of_date(
 ) -> list[str]:
     """A warning for each fund's prices, each currency's rates and each price index series that is out of date.
 
-    Series with nothing stored are left out. `fund_names` names the funds by ISIN; prices of other funds are ignored.
+    A fund whose last two prices are more than MONTHLY_GAP_DAYS apart is priced monthly and judged by its last price's
+    month, like a price index. Series with nothing stored are left out. `fund_names` names the funds by ISIN; prices of
+    other funds are ignored.
     """
     warnings = []
     last_prices = _last_two((p.isin, p.day) for p in prices)
@@ -44,10 +46,10 @@ def out_of_date(
             continue
         last, previous = last_prices[isin]
         if previous is not None and (last - previous).days > MONTHLY_GAP_DAYS:
-            stale = _months_between(last, today) > MAX_MONTHS
+            too_old = _months_between(last, today) > MAX_MONTHS
         else:
-            stale = _business_days(last, today) > MAX_BUSINESS_DAYS
-        if stale:
+            too_old = _business_days(last, today) > MAX_BUSINESS_DAYS
+        if too_old:
             warnings.append(f"{name} ({isin}) prices end on {last}; run inflation-station fetch-prices")
     for currency, last in sorted(_last((r.currency, r.day) for r in rates).items()):
         if _business_days(last, today) > MAX_BUSINESS_DAYS:
@@ -68,17 +70,17 @@ def _last(points: Iterable[tuple[str, date]]) -> dict[str, date]:
 
 def _last_two(points: Iterable[tuple[str, date]]) -> dict[str, tuple[date, date | None]]:
     """The latest day by key, and the one before it, if any."""
-    last: dict[str, tuple[date, date | None]] = {}
+    last_two: dict[str, tuple[date, date | None]] = {}
     for key, day in points:
-        if key not in last:
-            last[key] = (day, None)
+        if key not in last_two:
+            last_two[key] = (day, None)
             continue
-        latest, previous = last[key]
+        latest, previous = last_two[key]
         if day > latest:
-            last[key] = (day, latest)
+            last_two[key] = (day, latest)
         elif day < latest and (previous is None or day > previous):
-            last[key] = (latest, day)
-    return last
+            last_two[key] = (latest, day)
+    return last_two
 
 
 def _business_days(after: date, until: date) -> int:
