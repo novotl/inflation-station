@@ -49,6 +49,8 @@ class Timeline:
     dates: tuple[date, ...]
     # The gross CZK of Purchases traded on or before each day; fees count as invested, so they count against the return.
     amount_invested: tuple[Decimal, ...]
+    # `amount_invested` by ISIN, for every fund purchased, counting only that fund's Purchases.
+    fund_amount_invested: Mapping[str, tuple[Decimal, ...]]
     # The latest fund name by ISIN, for every fund purchased.
     fund_names: Mapping[str, str]
     # Units held by ISIN, for every fund purchased: the sum of the units of its Purchases traded on or before each day.
@@ -61,12 +63,17 @@ class Timeline:
     fund_currency_values: Mapping[str, tuple[Decimal | None, ...]]
     # The currency each fund in `fund_values` is priced in, by ISIN.
     fund_currencies: Mapping[str, str]
+    # What each fund is priced in, by ISIN, for every fund purchased: the currencies of its prices, or the unit price
+    # currency of its latest Purchase when it has none.
+    priced_in: Mapping[str, str]
     # The sum of `fund_values`; None when no fund can be valued.
     portfolio_value: tuple[Decimal | None, ...] | None
     # Why each fund left out of `fund_values` couldn't be valued, by ISIN.
     not_valued: Mapping[str, str]
     # The inflation hurdle by price index series, for every series with index levels.
     hurdles: Mapping[str, Hurdle]
+    # `hurdles` by ISIN, for every fund purchased, counting only that fund's Purchases.
+    fund_hurdles: Mapping[str, Mapping[str, Hurdle]]
 
 
 def timeline(
@@ -81,21 +88,25 @@ def timeline(
     first = min(p.trade_date for p in purchases)
     dates = tuple(first + timedelta(days=n) for n in range((today - first).days + 1))
 
+    by_isin = {isin: [p for p in purchases if p.isin == isin] for isin in sorted({p.isin for p in purchases})}
     units_held = {
-        isin: _running_total(dates, [(p.trade_date, p.units) for p in purchases if p.isin == isin])
-        for isin in sorted({p.isin for p in purchases})
+        isin: _running_total(dates, [(p.trade_date, p.units) for p in bought]) for isin, bought in by_isin.items()
     }
     fund_values: dict[str, tuple[Decimal | None, ...]] = {}
     fund_currency_values: dict[str, tuple[Decimal | None, ...]] = {}
     fund_currencies: dict[str, str] = {}
     not_valued: dict[str, str] = {}
+    priced_in: dict[str, str] = {}
     for isin, units in units_held.items():
         fund_prices = [p for p in prices if p.isin == isin]
         currencies = sorted({p.currency for p in fund_prices})
+        priced_in[isin] = (
+            ", ".join(currencies) if currencies else max(by_isin[isin], key=lambda p: p.trade_date).unit_price_currency
+        )
         if not fund_prices:
             not_valued[isin] = NO_PRICES
         elif len(currencies) > 1:
-            not_valued[isin] = f"priced in {', '.join(currencies)}"
+            not_valued[isin] = f"priced in {priced_in[isin]}"
         elif currencies != [CZK] and not any(r.currency == currencies[0] for r in rates):
             not_valued[isin] = no_rates(currencies[0])
         else:
@@ -109,21 +120,32 @@ def timeline(
             fund_currency_values[isin] = _zero_when_not_held(units, _times(units, unit_prices))
             fund_values[isin] = _zero_when_not_held(units, _times(fund_currency_values[isin], czk_per_unit))
 
+    levels_by_series = {
+        series: [i for i in index_levels if i.series == series] for series in sorted({i.series for i in index_levels})
+    }
     return Timeline(
         dates=dates,
-        amount_invested=_running_total(dates, [(p.trade_date, p.gross_czk) for p in purchases]),
+        amount_invested=_amount_invested(dates, purchases),
+        fund_amount_invested={isin: _amount_invested(dates, bought) for isin, bought in by_isin.items()},
         fund_names=fund_names(purchases),
         units_held=units_held,
         fund_values=fund_values,
         fund_currency_values=fund_currency_values,
         fund_currencies=fund_currencies,
+        priced_in=priced_in,
         portfolio_value=_sum(fund_values.values()) if fund_values else None,
         not_valued=not_valued,
-        hurdles={
-            series: _hurdle(dates, purchases, [i for i in index_levels if i.series == series])
-            for series in sorted({i.series for i in index_levels})
+        hurdles={series: _hurdle(dates, purchases, levels) for series, levels in levels_by_series.items()},
+        fund_hurdles={
+            isin: {series: _hurdle(dates, bought, levels) for series, levels in levels_by_series.items()}
+            for isin, bought in by_isin.items()
         },
     )
+
+
+def _amount_invested(dates: Sequence[date], purchases: Iterable[Purchase]) -> tuple[Decimal, ...]:
+    """The gross CZK of `purchases` traded on or before each day."""
+    return _running_total(dates, [(p.trade_date, p.gross_czk) for p in purchases])
 
 
 def _hurdle(dates: Sequence[date], purchases: Sequence[Purchase], levels: Sequence[IndexLevel]) -> Hurdle:
