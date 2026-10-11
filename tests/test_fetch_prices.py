@@ -63,7 +63,7 @@ def test_fetch_prices_with_an_empty_database_fails_with_a_readable_message(tmp_p
     assert run("--data-dir", tmp_path, "fetch-prices") == (
         1,
         "",
-        "Error: no Purchases to fetch prices for yet; import an export first: inflation-station import <csv>\n",
+        "Error: no Purchases to fetch prices for yet; import first: inflation-station import <file>...\n",
     )
 
 

@@ -1,15 +1,15 @@
 """Reads J&T Banka transaction exports: semicolons, Czech headers, `"1 501,01"` numbers, `HH:MM DD.MM.YYYY` dates."""
 
 import csv
-import re
 from datetime import date, datetime
-from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from inflation_station import czech
 from inflation_station.errors import InflationStationError
 from inflation_station.purchase import Purchase
 
 if TYPE_CHECKING:
+    from decimal import Decimal
     from pathlib import Path
 
 PURCHASE_MOVEMENT = "Investice klienta (vklad)"
@@ -44,10 +44,6 @@ COLUMNS = (
     FEE,
     FEE_CURRENCY,
 )
-
-# Thousands separators may be a plain, no-break or narrow no-break space.
-_SPACES = re.compile(r"[ \u00a0\u202f]")
-_NUMBER = re.compile(r"-?(\d+(\.\d*)?|\.\d+)")
 
 
 class RowError(Exception):
@@ -119,8 +115,8 @@ def _date(row: dict[str, str], column: str) -> date:
 
 
 def _decimal(row: dict[str, str], column: str) -> Decimal:
-    text = _SPACES.sub("", row[column]).replace(",", ".")
-    if not _NUMBER.fullmatch(text):
+    number = czech.decimal(row[column])
+    if number is None:
         msg = f"{column} {row[column]!r} is not a number like '1 501,01'"
         raise RowError(msg)
-    return Decimal(text)
+    return number

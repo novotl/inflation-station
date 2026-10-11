@@ -27,11 +27,14 @@ All data lives in the repo's gitignored `data/` directory unless you pass `--dat
 
 ```sh
 uv run inflation-station import data/jt_export.csv   # load a J&T transaction export; safe to re-run
+uv run inflation-station import data/investika_penezni.pdf data/investika_majetkovy.pdf   # load INVESTIKA statements
 uv run inflation-station fetch-prices                # download fund prices from Conseq; keeps stored prices
 uv run inflation-station fetch-fx                    # download CZK rates from ČNB for funds not priced in CZK
 uv run inflation-station fetch-cpi                   # download ČSÚ's CPI and Eurostat's HICP, for the inflation hurdles
 uv run inflation-station chart                       # write data/chart.html; open it in a browser
 ```
+
+`import` takes one or more files and recognises each from its content: a J&T transaction export (CSV) by its header, an [INVESTIKA](https://www.investika.cz) statement (PDF) by its title. INVESTIKA only exports PDF statements, two per contract, and both must be given together: the cash statement (`Pohyby na peněžním účtu`) and the holdings statement (`Transakce na majetkovém účtu`) with the same `Číslo smlouvy`. Each issue of units (`Vydání CP`) becomes a Purchase dated by its price date (see [ADR 0001](docs/adr/0001-investika-trade-date-is-the-price-date.md)); the amount paid comes from the cash statement's payment on the issue's order date, and the fee is that payment less the issue's amount. Payments with no units issued yet are skipped until a later export has them. Any transaction type the import doesn't know, in either file, fails the import; if any file fails, nothing is imported.
 
 `fetch-prices` finds each fund's Conseq page in `src/inflation_station/conseq_funds.toml`. To add a fund, put its ISIN and the URL of its page on [conseq.cz](https://www.conseq.cz/investice/prehled-fondu) there. After fetching, it compares each Purchase's unit price from the export with Conseq's price on the trade date and warns when they are in different currencies or differ by more than 0.5 % of Conseq's price; the warning changes nothing and Conseq's price is what the chart uses.
 

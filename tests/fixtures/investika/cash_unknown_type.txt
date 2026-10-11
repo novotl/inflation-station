@@ -1,0 +1,29 @@
+       Pohyby na peněžním účtu
+
+Datum exportu:               11.10.2026
+
+    Číslo smlouvy:
+    1234567890
+
+    Investiční program:
+    INVESTIKA realitní fond, otevřený podílový fond - Třída CZK (CZK)
+
+    Datum            Popis            Specifický symbol            Typ            Částka
+
+    20.09.2026            Výplata z VÚ klientovi            Debet            1 000,00 CZK
+
+    10.09.2026 12:16:38            Zaokrouhlení            Debet            1,09 CZK
+
+    10.09.2026 11:02:49            INVESTIKA realitní fond, otevřený podílový fond - Třída CZK, Pravidelná investice            Debet            4 898,91 CZK
+
+    10.09.2026 09:54:37            Vstupní poplatek za pravidelnou investici            Debet            100,00 CZK
+
+    03.08.2026            Odchozí platba z VÚ na investici            Debet            5 000,00 CZK
+
+    03.08.2026            Investice klienta - vklad na VÚ            Kredit            5 000,00 CZK
+
+    19.04.2021            Odchozí platba z VÚ na investici            3030            Debet            10 200,00 CZK
+
+    19.04.2021            Investice klienta - vklad na VÚ            3030            Kredit            10 200,00 CZK
+
+www.investika.cz            1/1

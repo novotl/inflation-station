@@ -1,9 +1,13 @@
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from click.testing import CliRunner
+from fpdf import FPDF
+from pypdf import PdfWriter
 
 from inflation_station.cli import main
 from inflation_station.settings import Settings
@@ -11,6 +15,8 @@ from inflation_station.store import Base, Store, database_url, engine
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPORT = FIXTURES / "jt_export.csv"
+INVESTIKA_CASH = FIXTURES / "investika" / "cash.pdf"
+INVESTIKA_HOLDINGS = FIXTURES / "investika" / "holdings.pdf"
 REPO_DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 
 
@@ -166,3 +172,122 @@ def test_migrations_match_the_models(tmp_path: Path) -> None:
 
     with engine(database_url(tmp_path)).connect() as connection:
         assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
+
+
+def test_investika_pair_imports_one_purchase_per_issue(tmp_path: Path) -> None:
+    assert run("--data-dir", tmp_path, "import", INVESTIKA_CASH, INVESTIKA_HOLDINGS) == (
+        0,
+        "2 Purchases added, 0 already present.\n",
+        "",
+    )
+
+    stored = {p.source_row_id: p for p in Store(tmp_path).purchases()}
+    assert sorted(stored) == ["2021-05-10T16:21:05", "2026-09-10T11:02:49"]
+    issue = stored["2026-09-10T11:02:49"]
+    assert (issue.platform, issue.account_id, issue.fund_name) == (
+        "investika",
+        "1234567890",
+        "INVESTIKA realitní fond, otevřený podílový fond - Třída CZK",
+    )
+    assert (issue.trade_date, issue.units, issue.unit_price, issue.gross_czk, issue.fee) == (
+        date(2026, 8, 31),
+        Decimal(2783),
+        Decimal("1.7603"),
+        Decimal("5000.00"),
+        Decimal("101.09"),
+    )
+
+
+def test_reimporting_investika_statements_adds_nothing(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", INVESTIKA_CASH, INVESTIKA_HOLDINGS)
+
+    assert run("--data-dir", tmp_path, "import", INVESTIKA_HOLDINGS, INVESTIKA_CASH) == (
+        0,
+        "0 Purchases added, 2 already present.\n",
+        "",
+    )
+
+
+def test_jt_export_and_investika_pair_import_together(tmp_path: Path) -> None:
+    assert run("--data-dir", tmp_path, "import", EXPORT, INVESTIKA_CASH, INVESTIKA_HOLDINGS) == (
+        0,
+        "9 Purchases added, 0 already present.\n",
+        "",
+    )
+
+
+def test_one_investika_statement_alone_fails_and_imports_nothing(tmp_path: Path) -> None:
+    assert run("--data-dir", tmp_path, "import", EXPORT, INVESTIKA_CASH) == (
+        1,
+        "",
+        (
+            "Error: INVESTIKA statements come in pairs with the same Číslo smlouvy: "
+            "contract 1234567890 has a cash statement (cash.pdf) but no holdings statement\n"
+        ),
+    )
+
+    # The J&T export given with it was not stored either.
+    _, out, _ = run("--data-dir", tmp_path, "import", EXPORT)
+    assert out == "7 Purchases added, 0 already present.\n"
+
+
+def test_bad_file_among_several_fails_and_imports_nothing(tmp_path: Path) -> None:
+    code, _, err = run(
+        "--data-dir",
+        tmp_path,
+        "import",
+        INVESTIKA_CASH,
+        INVESTIKA_HOLDINGS,
+        FIXTURES / "jt_export_unknown_movement.csv",
+    )
+    assert code == 1
+    assert err.startswith("Error: jt_export_unknown_movement.csv row 3 ")
+
+    _, out, _ = run("--data-dir", tmp_path, "import", INVESTIKA_CASH, INVESTIKA_HOLDINGS)
+    assert out == "2 Purchases added, 0 already present.\n"
+
+
+def test_pdf_that_is_not_an_investika_statement_fails(tmp_path: Path) -> None:
+    other = tmp_path / "other.pdf"
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=14)
+    pdf.text(15, 15, "Account statement")
+    pdf.output(str(other))
+
+    assert run("--data-dir", tmp_path, "import", other) == (
+        1,
+        "",
+        (
+            "Error: other.pdf is not an INVESTIKA statement: "
+            "its title is neither 'Pohyby na peněžním účtu' nor 'Transakce na majetkovém účtu'\n"
+        ),
+    )
+
+
+def test_broken_pdf_fails(tmp_path: Path) -> None:
+    broken = tmp_path / "broken.pdf"
+    broken.write_bytes(b"%PDF-1.4 not really")
+
+    code, _, err = run("--data-dir", tmp_path, "import", broken)
+    assert code == 1
+    assert err.startswith(f"Error: cannot read {broken}: ")
+
+
+def test_pdf_with_a_blank_page_fails(tmp_path: Path) -> None:
+    blank = tmp_path / "blank.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=595, height=842)
+    writer.write(blank)
+
+    assert run("--data-dir", tmp_path, "import", blank) == (
+        1,
+        "",
+        f"Error: cannot read {blank}: missing '/Contents'\n",
+    )
+
+
+def test_import_needs_at_least_one_file(tmp_path: Path) -> None:
+    code, _, err = run("--data-dir", tmp_path, "import")
+    assert code == 2  # noqa: PLR2004 - click's usage error
+    assert "Missing argument 'FILES...'" in err
