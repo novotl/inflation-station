@@ -3,10 +3,11 @@ from typing import TYPE_CHECKING
 
 import click
 
-from inflation_station import clock, cnb, conseq, csu, eurostat, jt
+from inflation_station import clock, cnb, conseq, csu, eurostat
 from inflation_station.chart import write_chart
 from inflation_station.errors import InflationStationError
 from inflation_station.freshness import out_of_date
+from inflation_station.imports import read_purchases
 from inflation_station.price_check import price_warnings
 from inflation_station.price_index import CSU_CPI, EUROSTAT_HICP, NAMES
 from inflation_station.purchase import first_trade_dates, fund_names
@@ -30,12 +31,15 @@ def main(ctx: click.Context, data_dir: Path | None) -> None:
 
 
 @main.command("import")
-@click.argument("csv", type=click.Path(dir_okay=False, path_type=Path))
+@click.argument("files", nargs=-1, required=True, type=click.Path(dir_okay=False, path_type=Path))
 @click.pass_obj
-def import_(data_dir: Path, csv: Path) -> None:
-    """Import a J&T transaction export (CSV)."""
+def import_(data_dir: Path, files: tuple[Path, ...]) -> None:
+    """Import J&T transaction exports (CSV) and INVESTIKA statements (PDF, a cash and a holdings one per contract).
+
+    Each file's format is recognised from its content. If any file fails, nothing is imported.
+    """
     try:
-        purchases = jt.read_export(csv)
+        purchases = read_purchases(files)
         result = Store(data_dir).add_purchases(purchases)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
@@ -139,7 +143,7 @@ def _stored_purchases(data_dir: Path, purpose: str) -> list[Purchase]:
     """The stored Purchases; raises if there are none. Only reads: no database is created in an empty data directory."""
     purchases = Store(data_dir).purchases() if database_exists(data_dir) else []
     if not purchases:
-        msg = f"no Purchases {purpose} yet; import an export first: inflation-station import <csv>"
+        msg = f"no Purchases {purpose} yet; import first: inflation-station import <file>..."
         raise InflationStationError(msg)
     return purchases
 

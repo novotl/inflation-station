@@ -1,0 +1,21 @@
+       Transakce na majetkovém účtu
+
+Datum exportu:               11.10.2026
+
+    Číslo smlouvy:
+    1234567890
+
+                                                            Typ            Počet            Cena /                        Datum            Datum            Datum
+    Název fondu                                    ISIN            transakce            kusů            kus            Částka            ceny            vypořádání            pokynu
+
+    INVESTIKA realitní fond, otevřený            CZ0008474830            Odkup CP            1000            1,7603            1 760,30            31.08.2026            10.09.2026            20.08.2026
+    podílový fond - Třída CZK                                                                        CZK            CZK                                    15:00:00
+
+    INVESTIKA realitní fond, otevřený            CZ0008474830            Vydání CP            2783            1,7603            4 898,91            31.08.2026            10.09.2026            03.08.2026
+    podílový fond - Třída CZK                                                                        CZK            CZK                                    11:02:49
+
+    INVESTIKA realitní fond, otevřený            CZ0008474830            Vydání CP            7761            1,2883            9 998,50            30.04.2021            10.05.2021            19.04.2021
+
+    podílový fond - Třída CZK                                                                        CZK            CZK                                    16:21:05
+
+www.investika.cz            1/1
