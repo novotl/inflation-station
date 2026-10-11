@@ -235,3 +235,37 @@ def test_chart_warns_only_of_the_series_that_are_out_of_date(tmp_path: Path, mon
             "run inflation-station fetch-prices\n"
         ),
     )
+
+
+def hover(line: dict, n: int) -> str:
+    """The hover text of a line's nth point, as plotly would fill in its template."""
+    text = line["hovertemplate"].replace("%{y:,.2f}", f"{line['y'][n]:,.2f}")
+    for m, value in enumerate(line["customdata"][n]):
+        if isinstance(value, float):
+            text = text.replace(f"%{{customdata[{m}]:,.2f}}", f"{value:,.2f}")
+        text = text.replace(f"%{{customdata[{m}]}}", str(value))
+    return text.removesuffix("<extra></extra>")
+
+
+def test_each_fund_hovers_with_its_units_and_its_value_in_its_own_currency(tmp_path: Path) -> None:
+    fetch_everything(tmp_path)
+    run("--data-dir", tmp_path, "chart")
+
+    lines = traces(tmp_path / "chart.html")
+    # On 1 Jul 2021, at ČNB's 25.505 CZK per EUR: 11.15 Franklin units at 37.86 EUR.
+    assert hover(lines["FTIF-Franklin Technology Fund-A(acc)EUR"], -1) == (
+        f"{11.15 * 37.86 * 25.505:,.2f} CZK ({11.15 * 37.86:,.2f} EUR) · 11.15 units"
+    )
+    # CZK funds have no bracketed amount; units are shown as stored, trailing zeros trimmed.
+    assert hover(lines["FF - World Fund A-ACC-CZK"], -1) == f"{79.90 * 1463:,.2f} CZK · 79.9 units"
+    assert hover(lines["J&T MONEY A CZK OPF"], -1) == f"{70705 * 1.4089:,.2f} CZK · 70,705 units"
+
+
+def test_portfolio_invested_and_hurdle_lines_hover_with_their_czk_value_only(tmp_path: Path) -> None:
+    fetch_everything(tmp_path)
+    run("--data-dir", tmp_path, "chart")
+
+    lines = traces(tmp_path / "chart.html")
+    for name in ("Portfolio value", "Amount invested", "Inflation hurdle (ČSÚ CPI)"):
+        assert lines[name]["hovertemplate"] == "%{y:,.2f} CZK"
+        assert "customdata" not in lines[name]

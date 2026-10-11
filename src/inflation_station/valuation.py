@@ -51,9 +51,16 @@ class Timeline:
     amount_invested: tuple[Decimal, ...]
     # The latest fund name by ISIN, for every fund purchased.
     fund_names: Mapping[str, str]
+    # Units held by ISIN, for every fund purchased: the sum of the units of its Purchases traded on or before each day.
+    units_held: Mapping[str, tuple[Decimal, ...]]
     # CZK value by ISIN, for the funds that can be valued: units held x the last known price on or before the day,
     # x the last known CZK rate on or before the day for funds not priced in CZK.
     fund_values: Mapping[str, tuple[Decimal | None, ...]]
+    # Value in the fund's own currency by ISIN, for the same funds as `fund_values`: units held x the last known price
+    # on or before the day.
+    fund_currency_values: Mapping[str, tuple[Decimal | None, ...]]
+    # The currency each fund in `fund_values` is priced in, by ISIN.
+    fund_currencies: Mapping[str, str]
     # The sum of `fund_values`; None when no fund can be valued.
     portfolio_value: tuple[Decimal | None, ...] | None
     # Why each fund left out of `fund_values` couldn't be valued, by ISIN.
@@ -74,9 +81,15 @@ def timeline(
     first = min(p.trade_date for p in purchases)
     dates = tuple(first + timedelta(days=n) for n in range((today - first).days + 1))
 
+    units_held = {
+        isin: _running_total(dates, [(p.trade_date, p.units) for p in purchases if p.isin == isin])
+        for isin in sorted({p.isin for p in purchases})
+    }
     fund_values: dict[str, tuple[Decimal | None, ...]] = {}
+    fund_currency_values: dict[str, tuple[Decimal | None, ...]] = {}
+    fund_currencies: dict[str, str] = {}
     not_valued: dict[str, str] = {}
-    for isin in sorted({p.isin for p in purchases}):
+    for isin, units in units_held.items():
         fund_prices = [p for p in prices if p.isin == isin]
         currencies = sorted({p.currency for p in fund_prices})
         if not fund_prices:
@@ -91,13 +104,19 @@ def timeline(
                 if currencies == [CZK]
                 else _last_known(dates, [(r.day, r.czk_per_unit) for r in rates if r.currency == currencies[0]])
             )
-            fund_values[isin] = _fund_value(dates, [p for p in purchases if p.isin == isin], fund_prices, czk_per_unit)
+            fund_currencies[isin] = currencies[0]
+            unit_prices = _last_known(dates, [(p.day, p.price) for p in fund_prices])
+            fund_currency_values[isin] = _fund_value(units, _times(units, unit_prices))
+            fund_values[isin] = _fund_value(units, _times(fund_currency_values[isin], czk_per_unit))
 
     return Timeline(
         dates=dates,
         amount_invested=_running_total(dates, [(p.trade_date, p.gross_czk) for p in purchases]),
         fund_names=fund_names(purchases),
+        units_held=units_held,
         fund_values=fund_values,
+        fund_currency_values=fund_currency_values,
+        fund_currencies=fund_currencies,
         portfolio_value=_sum(fund_values.values()) if fund_values else None,
         not_valued=not_valued,
         hurdles={
@@ -149,21 +168,9 @@ def _next_month(month: date) -> date:
     return (month + timedelta(days=31)).replace(day=1)
 
 
-def _fund_value(
-    dates: Sequence[date],
-    purchases: Sequence[Purchase],
-    prices: Sequence[FundPrice],
-    czk_per_unit: Sequence[Decimal | None],
-) -> tuple[Decimal | None, ...]:
-    units_held = _running_total(dates, [(p.trade_date, p.units) for p in purchases])
-    unit_prices = _last_known(dates, [(p.day, p.price) for p in prices])
-    values: list[Decimal | None] = []
-    for units, unit_price, rate in zip(units_held, unit_prices, czk_per_unit, strict=True):
-        if not units:
-            values.append(Decimal(0))
-        else:
-            values.append(None if unit_price is None or rate is None else units * unit_price * rate)
-    return tuple(values)
+def _fund_value(units_held: Sequence[Decimal], values: Sequence[Decimal | None]) -> tuple[Decimal | None, ...]:
+    """`values` on the days units are held; nothing held is worth nothing, even before a price is known."""
+    return tuple(value if units else Decimal(0) for units, value in zip(units_held, values, strict=True))
 
 
 def _last_known(dates: Sequence[date], points: Sequence[tuple[date, Decimal]]) -> tuple[Decimal | None, ...]:
@@ -193,6 +200,11 @@ def _running_total(dates: Sequence[date], amounts: Iterable[tuple[date, Decimal]
         total += on[d]
         totals.append(total)
     return tuple(totals)
+
+
+def _times(a: Sequence[Decimal | None], b: Sequence[Decimal | None]) -> tuple[Decimal | None, ...]:
+    """Day-by-day product; None on a day either is None."""
+    return tuple(None if x is None or y is None else x * y for x, y in zip(a, b, strict=True))
 
 
 def _sum(series: Iterable[tuple[Decimal | None, ...]]) -> tuple[Decimal | None, ...]:
