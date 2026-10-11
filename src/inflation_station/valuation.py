@@ -106,8 +106,8 @@ def timeline(
             )
             fund_currencies[isin] = currencies[0]
             unit_prices = _last_known(dates, [(p.day, p.price) for p in fund_prices])
-            fund_currency_values[isin] = _fund_value(units, _times(units, unit_prices))
-            fund_values[isin] = _fund_value(units, _times(fund_currency_values[isin], czk_per_unit))
+            fund_currency_values[isin] = _zero_when_not_held(units, _times(units, unit_prices))
+            fund_values[isin] = _zero_when_not_held(units, _times(fund_currency_values[isin], czk_per_unit))
 
     return Timeline(
         dates=dates,
@@ -168,8 +168,8 @@ def _next_month(month: date) -> date:
     return (month + timedelta(days=31)).replace(day=1)
 
 
-def _fund_value(units_held: Sequence[Decimal], values: Sequence[Decimal | None]) -> tuple[Decimal | None, ...]:
-    """`values` on the days units are held; nothing held is worth nothing, even before a price is known."""
+def _zero_when_not_held(units_held: Sequence[Decimal], values: Sequence[Decimal | None]) -> tuple[Decimal | None, ...]:
+    """`values` on the days units are held, else 0: nothing held is worth nothing, even before a price is known."""
     return tuple(value if units else Decimal(0) for units, value in zip(units_held, values, strict=True))
 
 
@@ -202,9 +202,12 @@ def _running_total(dates: Sequence[date], amounts: Iterable[tuple[date, Decimal]
     return tuple(totals)
 
 
-def _times(a: Sequence[Decimal | None], b: Sequence[Decimal | None]) -> tuple[Decimal | None, ...]:
+def _times(series: Sequence[Decimal | None], factors: Sequence[Decimal | None]) -> tuple[Decimal | None, ...]:
     """Day-by-day product; None on a day either is None."""
-    return tuple(None if x is None or y is None else x * y for x, y in zip(a, b, strict=True))
+    return tuple(
+        None if value is None or factor is None else value * factor
+        for value, factor in zip(series, factors, strict=True)
+    )
 
 
 def _sum(series: Iterable[tuple[Decimal | None, ...]]) -> tuple[Decimal | None, ...]:

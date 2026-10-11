@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 
 CHART_NAME = "chart.html"
 HOVER_CZK = "%{y:,.2f} CZK"
-HOVER_UNITS = " · %{customdata[1]} units"
 # How each price index series' published hurdle is drawn. Every estimated part is dotted; the colours tell them apart.
 HURDLE_LINES = {CSU_CPI: {"color": "black", "dash": "solid"}, EUROSTAT_HICP: {"color": "dimgray", "dash": "dash"}}
 
@@ -30,22 +29,18 @@ def write_chart(timeline: Timeline, data_dir: Path) -> Path:
         figure.add_scatter(x=timeline.dates, y=_floats(timeline.portfolio_value), name="Portfolio value")
     # Each fund is a line of its own, which a click on the legend shows or hides.
     for isin, values in timeline.fund_values.items():
+        customdata, hovertemplate = _fund_hover(timeline, isin)
         figure.add_scatter(
             x=timeline.dates,
             y=_floats(values),
             name=timeline.fund_names[isin],
-            customdata=list(
-                zip(
-                    _floats(timeline.fund_currency_values[isin]),
-                    [_units(units) for units in timeline.units_held[isin]],
-                    strict=True,
-                )
-            ),
-            hovertemplate=_fund_hover(timeline.fund_currencies[isin]),
+            customdata=customdata,
+            hovertemplate=hovertemplate,
         )
     figure.add_scatter(x=timeline.dates, y=_floats(timeline.amount_invested), name="Amount invested", line_shape="hv")
     for series, hurdle in timeline.hurdles.items():
         _add_hurdle(figure, timeline.dates, hurdle, series)
+    # Every line but the funds', which have their own hover, shows just its CZK value.
     figure.update_traces(hovertemplate=HOVER_CZK, selector=lambda trace: trace.hovertemplate is None)
     path = data_dir / CHART_NAME
     figure.write_html(path, include_plotlyjs=True)
@@ -76,11 +71,21 @@ def _add_hurdle(figure: go.Figure, dates: Sequence[date], hurdle: Hurdle, series
         )
 
 
-def _fund_hover(currency: str) -> str:
-    """The CZK value, then the value in the fund's own currency unless that is CZK, then the units held."""
-    if currency == CZK:
-        return HOVER_CZK + HOVER_UNITS
-    return f"{HOVER_CZK} (%{{customdata[0]:,.2f}} {currency}){HOVER_UNITS}"
+def _fund_hover(timeline: Timeline, isin: str) -> tuple[list[tuple[float | None, str]], str]:
+    """A fund line's customdata and the hover template that reads it.
+
+    The CZK value, then the value in the fund's own currency unless that is CZK, then the units held.
+    """
+    customdata = list(
+        zip(
+            _floats(timeline.fund_currency_values[isin]),
+            [_units(units) for units in timeline.units_held[isin]],
+            strict=True,
+        )
+    )
+    currency = timeline.fund_currencies[isin]
+    in_currency = "" if currency == CZK else f" (%{{customdata[0]:,.2f}} {currency})"
+    return customdata, f"{HOVER_CZK}{in_currency} · %{{customdata[1]}} units"
 
 
 def _units(units: Decimal) -> str:
