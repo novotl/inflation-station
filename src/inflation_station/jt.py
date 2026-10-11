@@ -13,7 +13,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 PURCHASE_MOVEMENT = "Investice klienta (vklad)"
-CASH_DEPOSIT_MOVEMENT = "Vklad - vyrovnání nákupu CP klienta - Vklad pro obchod"
+# J&T keeps renaming cash deposits ("Vklad - vyrovnání nákupu CP klienta - …", "Vklad klienta - <n>"),
+# so they're recognised by shape: a "Vklad…" movement with no ISIN.
+CASH_DEPOSIT_PREFIX = "Vklad"
 
 # The columns read from the export, each named once.
 MOVEMENT_TYPE = "Typ pohybu"
@@ -80,7 +82,7 @@ def read_export(path: Path) -> list[Purchase]:
 
 def _purchase(row: dict[str, str]) -> Purchase | None:
     movement_type = row[MOVEMENT_TYPE]
-    if movement_type == CASH_DEPOSIT_MOVEMENT:
+    if movement_type.startswith(CASH_DEPOSIT_PREFIX) and not row[ISIN]:
         return None
     if movement_type != PURCHASE_MOVEMENT:
         msg = f"unknown movement type {movement_type!r}"

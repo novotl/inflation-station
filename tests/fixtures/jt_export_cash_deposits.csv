@@ -1,0 +1,5 @@
+Datum a čas pohybu;Datum a čas zobchodování;Typ pohybu;Název CP;Ticker;Burza;Objem v měně platby;Měna platby;ISIN;ID pokynu;ID obchodu;ID pohybu;Portfolio;Účet;Depozitář;Počet ks;Hodnota za ks (v měně obchodu);Měna kusové hodnoty (v měně obchodu);Poplatek (v měně obchodu);Měna poplatku (v měně obchodu);AUV;FX kurz;FX kurz - měny;Objem (v měně obchodu);Měna objemu obchodu (v měně obchodu)
+00:00 18.06.2021;;Vklad - vyrovnání nákupu CP klienta - Vklad pro obchod;;;;"8 000,00";CZK;;;;900100001;900000001;CZK - 900000001;;;;;;;;;;;
+00:00 18.06.2022;;Vklad - vyrovnání nákupu CP klienta - Migrace na tradingové portfolio pro TA;;;;"5 000,00";CZK;;;;900100101;900000001;CZK - 900000001;;;;;;;;;;;
+00:00 18.06.2023;;Vklad klienta - 2167033;;;;"5 000,00";CZK;;;;900100102;900000001;CZK - 900000001;;;;;;;;;;;
+00:00 18.07.2023;;Vklad klienta - 2201458;;;;"3 000,00";CZK;;;;900100103;900000001;CZK - 900000001;;;;;;;;;;;
