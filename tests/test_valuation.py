@@ -281,3 +281,44 @@ def test_there_is_no_hurdle_without_index_levels() -> None:
     t = timeline([purchase(date(2021, 6, 13), "1000")], today=date(2021, 6, 13))
 
     assert t.hurdles == {}
+
+
+def test_units_held_are_tracked_for_every_fund_purchased_valued_or_not() -> None:
+    t = timeline(
+        [
+            purchase(date(2021, 6, 13), "1000", units="2"),
+            purchase(date(2021, 6, 14), "1000", units="1.25"),
+            purchase(date(2021, 6, 14), "1000", isin=EUR_FUND, units="3"),
+        ],
+        prices=[price(date(2021, 6, 13), "10")],
+        today=date(2021, 6, 14),
+    )
+
+    assert t.units_held == {CZK_FUND: (Decimal(2), Decimal("3.25")), EUR_FUND: (Decimal(0), Decimal(3))}
+
+
+def test_fund_currency_values_are_units_held_times_the_last_known_price() -> None:
+    t = timeline(
+        [purchase(date(2021, 6, 11), "1000", isin=EUR_FUND, units="2"), purchase(date(2021, 6, 12), "1000")],
+        prices=[
+            price(date(2021, 6, 12), "40", isin=EUR_FUND, currency="EUR"),
+            price(date(2021, 6, 14), "42", isin=EUR_FUND, currency="EUR"),
+            price(date(2021, 6, 11), "10"),
+        ],
+        rates=[rate(date(2021, 6, 11), "25.5")],
+        today=date(2021, 6, 14),
+    )
+
+    # Fri: no EUR price yet; Sat and Sun: 2 x 40 EUR; Mon: 2 x 42. The CZK fund is worth nothing before it's bought.
+    assert t.fund_currency_values == {
+        EUR_FUND: (None, Decimal(80), Decimal(80), Decimal(84)),
+        CZK_FUND: (Decimal(0), Decimal(10), Decimal(10), Decimal(10)),
+    }
+    assert t.fund_currencies == {EUR_FUND: "EUR", CZK_FUND: "CZK"}
+
+
+def test_funds_not_valued_have_no_fund_currency_value() -> None:
+    t = timeline([purchase(date(2021, 6, 13), "1000")], today=date(2021, 6, 13))
+
+    assert t.fund_currency_values == {}
+    assert t.fund_currencies == {}
