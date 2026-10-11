@@ -47,11 +47,12 @@ def statement(fixture: str) -> investika.Statement:
     return investika.statement(fixture, (INVESTIKA / fixture).read_text(encoding="utf-8").splitlines())
 
 
-def purchases(*fixtures: str) -> list[Purchase]:
-    return investika.purchases([statement(f) for f in fixtures])
+def purchases(*fixtures: str | investika.Statement) -> list[Purchase]:
+    """Purchases from fixture files, or from statements a test has changed."""
+    return investika.purchases([statement(f) if isinstance(f, str) else f for f in fixtures])
 
 
-def fails(*fixtures: str, error: str) -> None:
+def fails(*fixtures: str | investika.Statement, error: str) -> None:
     with pytest.raises(InflationStationError, match=f"^{re.escape(error)}$"):
         purchases(*fixtures)
 
@@ -111,7 +112,7 @@ def test_mismatched_contract_numbers_fail() -> None:
         "cash.txt",
         "holdings_other_contract.txt",
         error=(
-            "Investika statements come in pairs with the same Číslo smlouvy: "
+            "INVESTIKA statements come in pairs with the same Číslo smlouvy: "
             "contract 1234567890 has a cash statement (cash.txt) but no holdings statement; "
             "contract 9876543210 has a holdings statement (holdings_other_contract.txt) but no cash statement"
         ),
@@ -126,7 +127,7 @@ def test_mismatched_contract_numbers_fail() -> None:
     ],
 )
 def test_only_one_statement_of_the_pair_fails(fixture: str, error: str) -> None:
-    fails(fixture, error=f"Investika statements come in pairs with the same Číslo smlouvy: {error}")
+    fails(fixture, error=f"INVESTIKA statements come in pairs with the same Číslo smlouvy: {error}")
 
 
 def test_two_statements_of_one_kind_for_a_contract_fail() -> None:
@@ -135,7 +136,7 @@ def test_two_statements_of_one_kind_for_a_contract_fail() -> None:
         "cash_pending_payment.txt",
         "holdings.txt",
         error=(
-            "Investika statements come in pairs with the same Číslo smlouvy: "
+            "INVESTIKA statements come in pairs with the same Číslo smlouvy: "
             "contract 1234567890 has 2 cash statements (cash.txt, cash_pending_payment.txt)"
         ),
     )
@@ -148,11 +149,26 @@ def test_no_statements_give_no_purchases() -> None:
 def test_payment_smaller_than_the_issue_fails() -> None:
     cash = statement("cash.txt")
     lines = [line.replace("10 200,00", "9 000,00") for line in cash.lines]
-    fails_with = (
-        "holdings.txt row 'Vydání CP' ordered 19.04.2021: payment 9 000,00 is less than the issue's Částka 9 998,50"
+    fails(
+        investika.statement("cash.txt", lines),
+        "holdings.txt",
+        error=(
+            "holdings.txt row 'Vydání CP' ordered 19.04.2021: payment 9 000,00 is less than the issue's Částka 9 998,50"
+        ),
     )
-    with pytest.raises(InflationStationError, match=f"^{re.escape(fails_with)}$"):
-        investika.purchases([investika.statement("cash.txt", lines), statement("holdings.txt")])
+
+
+def test_two_issues_settled_at_the_same_time_fail() -> None:
+    holdings = statement("holdings.txt")
+    lines = [line.replace("10.05.2021", "10.09.2026").replace("16:21:05", "11:02:49") for line in holdings.lines]
+    fails(
+        "cash.txt",
+        investika.statement("holdings.txt", lines),
+        error=(
+            "holdings.txt row 'Vydání CP' ordered 19.04.2021: settled at 2026-09-10T11:02:49, like an earlier issue; "
+            "the settlement time identifies an issue, so the import cannot tell them apart"
+        ),
+    )
 
 
 @pytest.mark.parametrize(
@@ -231,7 +247,7 @@ def test_lines_without_a_title_are_not_a_statement() -> None:
     with pytest.raises(
         InflationStationError,
         match=re.escape(
-            "x.pdf is not an Investika statement: its title is neither "
+            "x.pdf is not an INVESTIKA statement: its title is neither "
             "'Pohyby na peněžním účtu' nor 'Transakce na majetkovém účtu'"
         ),
     ):

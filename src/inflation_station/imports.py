@@ -15,7 +15,7 @@ PDF_SIGNATURE = b"%PDF-"
 
 
 def read_purchases(paths: Iterable[Path]) -> list[Purchase]:
-    """The Purchases in J&T exports (CSV) and Investika statement pairs (PDF). Raises if any file fails to read."""
+    """The Purchases in J&T exports (CSV) and INVESTIKA statement pairs (PDF). Raises if any file fails to read."""
     purchases: list[Purchase] = []
     statements = []
     for path in paths:

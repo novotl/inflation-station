@@ -7,6 +7,7 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from click.testing import CliRunner
 from fpdf import FPDF
+from pypdf import PdfWriter
 
 from inflation_station.cli import main
 from inflation_station.settings import Settings
@@ -220,7 +221,7 @@ def test_one_investika_statement_alone_fails_and_imports_nothing(tmp_path: Path)
         1,
         "",
         (
-            "Error: Investika statements come in pairs with the same Číslo smlouvy: "
+            "Error: INVESTIKA statements come in pairs with the same Číslo smlouvy: "
             "contract 1234567890 has a cash statement (cash.pdf) but no holdings statement\n"
         ),
     )
@@ -258,7 +259,7 @@ def test_pdf_that_is_not_an_investika_statement_fails(tmp_path: Path) -> None:
         1,
         "",
         (
-            "Error: other.pdf is not an Investika statement: "
+            "Error: other.pdf is not an INVESTIKA statement: "
             "its title is neither 'Pohyby na peněžním účtu' nor 'Transakce na majetkovém účtu'\n"
         ),
     )
@@ -271,6 +272,19 @@ def test_broken_pdf_fails(tmp_path: Path) -> None:
     code, _, err = run("--data-dir", tmp_path, "import", broken)
     assert code == 1
     assert err.startswith(f"Error: cannot read {broken}: ")
+
+
+def test_pdf_with_a_blank_page_fails(tmp_path: Path) -> None:
+    blank = tmp_path / "blank.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=595, height=842)
+    writer.write(blank)
+
+    assert run("--data-dir", tmp_path, "import", blank) == (
+        1,
+        "",
+        f"Error: cannot read {blank}: missing '/Contents'\n",
+    )
 
 
 def test_import_needs_at_least_one_file(tmp_path: Path) -> None:

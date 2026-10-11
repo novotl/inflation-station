@@ -1,4 +1,4 @@
-# Made-up Investika statements
+# Made-up INVESTIKA statements
 
 Real statements carry personal data (birth number, address, contract number), so none are committed. Everything here is made up, laid out like the real statements of 2026-10-11, contract `1234567890`.
 
@@ -8,7 +8,7 @@ Real statements carry personal data (birth number, address, contract number), so
   uv run python tests/fixtures/investika/make_pdfs.py path/to/DejaVuSans.ttf
   ```
 
-- `*.txt`: text as pypdf's layout mode extracts it from a real statement, with columns separated by runs of spaces and, sometimes, a blank line inside a holdings row. `cash.txt` and `holdings.txt` are a matching pair; each other file changes one of them for one edge case:
+- `*.txt`: made-up text, laid out the way pypdf's layout mode extracts a real statement, with columns separated by runs of spaces and, sometimes, a blank line inside a holdings row. `cash.txt` and `holdings.txt` are a matching pair; each other file changes one of them for one edge case:
   - `cash_pending_payment.txt`: a payment with no issue yet
   - `holdings_unmatched_issue.txt`: an issue with no payment on its order date
   - `cash_two_payments.txt`: two payments on one order date

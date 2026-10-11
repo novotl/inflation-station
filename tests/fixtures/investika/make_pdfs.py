@@ -1,4 +1,4 @@
-"""Write cash.pdf and holdings.pdf: a made-up Investika statement pair laid out like the real ones.
+"""Write cash.pdf and holdings.pdf: a made-up INVESTIKA statement pair laid out like the real ones.
 
 Usage: uv run python tests/fixtures/investika/make_pdfs.py <font.ttf>
 

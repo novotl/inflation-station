@@ -58,7 +58,7 @@ class Statement:
 
 class _Payment(NamedTuple):
     amount: Decimal
-    written: str  # as the statement writes it, for messages
+    as_written: str  # for messages
 
 
 class RowError(Exception):
@@ -66,12 +66,15 @@ class RowError(Exception):
 
 
 def read_pdf(path: Path) -> Statement:
-    """The statement in an Investika PDF."""
+    """The statement in an INVESTIKA PDF."""
     try:
         pages = PdfReader(path).pages
         lines = [line for page in pages for line in page.extract_text(extraction_mode="layout").splitlines()]
     except (OSError, PyPdfError) as e:
         msg = f"cannot read {path}: {e}"
+        raise InflationStationError(msg) from e
+    except KeyError as e:  # pypdf's layout mode, on a page without a content stream, such as a blank page
+        msg = f"cannot read {path}: missing {e}"
         raise InflationStationError(msg) from e
     return statement(path.name, lines)
 
@@ -80,7 +83,7 @@ def statement(name: str, lines: list[str]) -> Statement:
     """Recognise a statement by its title, its first line of text."""
     title = next((line.strip() for line in lines if line.strip()), "")
     if title not in KIND_NAMES:
-        msg = f"{name} is not an Investika statement: its title is neither {CASH!r} nor {HOLDINGS!r}"
+        msg = f"{name} is not an INVESTIKA statement: its title is neither {CASH!r} nor {HOLDINGS!r}"
         raise InflationStationError(msg)
     return Statement(name=name, title=title, contract=_contract(name, lines), lines=lines)
 
@@ -102,9 +105,10 @@ def purchases(statements: Iterable[Statement]) -> list[Purchase]:
     result = []
     for cash, holdings in _pairs(statements):
         payments = _Payments(cash)
+        row_ids: set[str] = set()
         for cells, next_cells in _holdings_rows(holdings):
             try:
-                result.append(_purchase(holdings.contract, cells, next_cells, payments))
+                result.append(_claim_row_id(_purchase(holdings.contract, cells, next_cells, payments), row_ids))
             except RowError as e:
                 msg = f"{holdings.name} row {cells[2]!r} ordered {cells[-1]}: {e}"
                 raise InflationStationError(msg) from e
@@ -129,7 +133,7 @@ def _pairs(statements: Iterable[Statement]) -> list[tuple[Statement, Statement]]
                     f"but no {KIND_NAMES[other]} statement"
                 )
     if problems:
-        msg = f"Investika statements come in pairs with the same {CONTRACT}: {'; '.join(problems)}"
+        msg = f"INVESTIKA statements come in pairs with the same {CONTRACT}: {'; '.join(problems)}"
         raise InflationStationError(msg)
     return [(kinds[CASH][0], kinds[HOLDINGS][0]) for kinds in by_contract.values()]
 
@@ -223,10 +227,10 @@ def _purchase(contract: str, cells: list[str], next_cells: list[str], payments: 
         msg = f"Částka is in {net_currency!r}, expected 'CZK'"
         raise RowError(msg)
 
-    gross, gross_written = payments.claim(_date(ordered, "Datum pokynu"))
+    gross, gross_as_written = payments.claim(_date(ordered, "Datum pokynu"))
     net_amount = _decimal(net, "Částka")
     if gross < net_amount:
-        msg = f"payment {gross_written} is less than the issue's Částka {net}"
+        msg = f"payment {gross_as_written} is less than the issue's Částka {net}"
         raise RowError(msg)
 
     try:
@@ -250,6 +254,18 @@ def _purchase(contract: str, cells: list[str], next_cells: list[str], payments: 
         fee=gross - net_amount,
         fee_currency="CZK",
     )
+
+
+def _claim_row_id(purchase: Purchase, row_ids: set[str]) -> Purchase:
+    """The purchase, unless an earlier issue settled at the same time; the store would drop it as already present."""
+    if purchase.source_row_id in row_ids:
+        msg = (
+            f"settled at {purchase.source_row_id}, like an earlier issue; "
+            "the settlement time identifies an issue, so the import cannot tell them apart"
+        )
+        raise RowError(msg)
+    row_ids.add(purchase.source_row_id)
+    return purchase
 
 
 def _cash_amount(text: str) -> str:
