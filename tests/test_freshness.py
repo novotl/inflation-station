@@ -64,3 +64,31 @@ def test_an_index_is_out_of_date_once_its_next_month_should_have_been_published(
 
 def test_nothing_stored_is_nothing_out_of_date() -> None:
     assert out_of_date(fund_names=NAMES, today=FRIDAY) == []
+
+
+def test_a_fund_priced_monthly_is_out_of_date_like_an_index() -> None:
+    # INVESTIKA publishes month-end prices about six weeks late: on 11 Oct its last price is still 31 Aug.
+    prices = [price(date(2021, 6, 30)), price(date(2021, 7, 30)), price(date(2021, 8, 31))]
+
+    assert out_of_date(prices=prices, fund_names=NAMES, today=date(2021, 10, 11)) == []
+    assert out_of_date(prices=prices, fund_names=NAMES, today=date(2021, 10, 31)) == []
+    assert out_of_date(prices=prices, fund_names=NAMES, today=date(2021, 11, 1)) == [
+        "FF - World Fund A-ACC-CZK (LU1756523376) prices end on 2021-08-31; run inflation-station fetch-prices"
+    ]
+
+
+def test_a_fund_is_priced_monthly_when_its_last_two_prices_are_more_than_twenty_days_apart() -> None:
+    today = date(2021, 8, 2)
+    warning = "FF - World Fund A-ACC-CZK (LU1756523376) prices end on 2021-07-02; run inflation-station fetch-prices"
+
+    twenty_days = [price(date(2021, 6, 12)), price(FRIDAY)]
+    twenty_one_days = [price(date(2021, 6, 11)), price(FRIDAY)]
+
+    assert out_of_date(prices=twenty_days, fund_names=NAMES, today=today) == [warning]
+    assert out_of_date(prices=twenty_one_days, fund_names=NAMES, today=today) == []
+
+
+def test_a_fund_with_a_single_price_is_judged_as_daily() -> None:
+    assert out_of_date(prices=[price(FRIDAY)], fund_names=NAMES, today=date(2021, 7, 12)) == [
+        "FF - World Fund A-ACC-CZK (LU1756523376) prices end on 2021-07-02; run inflation-station fetch-prices"
+    ]
