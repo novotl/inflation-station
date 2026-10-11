@@ -87,7 +87,9 @@ PAGE = r"""<!doctype html>
 <script>
   // Light or dark: the stored choice, else the system's. Set before anything paints.
   (() => { let t = null; try { t = localStorage.getItem("theme"); } catch (e) {}
-    document.documentElement.dataset.theme = t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); })();
+    document.documentElement.dataset.theme = t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    let p = null; try { p = localStorage.getItem("private"); } catch (e) {}
+    if (p === "1") document.documentElement.dataset.private = ""; })();
 </script>
 <script>{{PLOTLY}}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -111,7 +113,13 @@ PAGE = r"""<!doctype html>
   .top-right { display: flex; align-items: center; gap: 10px; }
   #theme { border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: 999px; height: 30px;
     padding: 0 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; font: 500 13px Inter, system-ui, sans-serif; }
-  #theme:hover { background: var(--hover); }
+  #theme:hover, #private:hover { background: var(--hover); }
+  #private { border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: 999px; height: 30px;
+    padding: 0 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; font: 500 13px Inter, system-ui, sans-serif; }
+  :root[data-private] #private { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  /* Privacy: absolute amounts blurred, percentages left readable. */
+  .abs { transition: filter .15s; }
+  :root[data-private] .abs { filter: blur(7px); user-select: none; }
   * { box-sizing: border-box; }
   body { font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; color: var(--ink); background: var(--bg);
     -webkit-font-smoothing: antialiased; font-feature-settings: "tnum"; }
@@ -179,7 +187,7 @@ PAGE = r"""<!doctype html>
 </style>
 </head>
 <body>
-<header class="top"><div class="wrap"><span class="brand">inflation-station</span><nav id="switcher" title="Prototype layouts (← / → to cycle)"><span class="proto">PROTOTYPE</span></nav><span class="top-right"><span class="asof">as of {{TODAY}}</span><button id="theme" title="Switch light/dark"></button></span></div></header>
+<header class="top"><div class="wrap"><span class="brand">inflation-station</span><nav id="switcher" title="Prototype layouts (← / → to cycle)"><span class="proto">PROTOTYPE</span></nav><span class="top-right"><span class="asof">as of {{TODAY}}</span><button id="private" title="Blur absolute amounts; percentages stay"></button><button id="theme" title="Switch light/dark"></button></span></div></header>
 <div class="variant" id="v-A" data-name="Today's page">{{VARIANT_A}}</div>
 <div class="variant" id="v-B" data-name="Dashboard + fund table"></div>
 <div class="variant" id="v-C" data-name="Relative to inflation, small multiples"></div>
@@ -233,6 +241,16 @@ function recolor(g) {
   const shapes = (g.layout.shapes || []).map(sh => sh.name === "est" ? { ...sh, fillcolor: c.est } : sh.name === "zero" ? { ...sh, line: { ...sh.line, color: c.zero } } : sh);
   Plotly.relayout(g, { ...themeColors(), ...(shapes.length ? { shapes } : {}) });
 }
+const isPrivate = () => "private" in document.documentElement.dataset;
+const PRIVATE_HOVER = "•••••• CZK";
+// CZK charts lose their axis numbers and hover amounts; % charts (tickformat with %) are left alone.
+function privacy(g) {
+  if ((g.layout.yaxis?.tickformat || "").includes("%")) return;
+  if (!g._ownHover) g._ownHover = g.data.map(t => t.hovertemplate ?? null);
+  const on = isPrivate();
+  Plotly.restyle(g, { hovertemplate: on ? g.data.map(() => PRIVATE_HOVER) : g._ownHover });
+  Plotly.relayout(g, { "yaxis.showticklabels": !on });
+}
 async function plot(id, traces, layout = {}, cfg) {
   const legend = { ...THEME.legend, ...legendFor(traces.length), ...(layout.legend || {}) };
   const margin = { ...THEME.margin, ...(legend.orientation === "h" && layout.showlegend !== false ? { t: 36 } : {}), ...(layout.margin || {}) };
@@ -240,9 +258,11 @@ async function plot(id, traces, layout = {}, cfg) {
   if (typeof layout.yaxis?.title === "string") full.yaxis.title = { ...THEME.yaxis.title, text: layout.yaxis.title };
   const g = await Plotly.newPlot(id, traces, full, cfg);
   recolor(g);
+  privacy(g);
 }
 const nf = (x, d = 0) => x == null ? "–" : x.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
-const czk = x => x == null ? "–" : nf(x) + " CZK";
+const abs = h => `<span class="abs">${h}</span>`;
+const czk = x => x == null ? "–" : abs(nf(x) + " CZK");
 const pct = x => x == null ? "–" : (x >= 0 ? "+" : "") + (100 * x).toFixed(1) + " %";
 const cls = x => x == null ? "muted" : x >= 0 ? "pos" : "neg";
 const last = a => { if (!a) return null; for (let i = a.length - 1; i >= 0; i--) if (a[i] != null) return a[i]; return null; };
@@ -291,9 +311,9 @@ function renderB(el) {
     const v = last(f.values), inv = last(f.invested), h = last(f.hurdles[CPI]?.values);
     const tr = document.createElement("tr"); tr.className = "row";
     tr.innerHTML = `<td>${f.name}<div class="isin">${f.isin}${f.notValued ? ` · <span class="neg">not valued: ${f.notValued}</span>` : ""}</div></td>
-      <td>${f.pricedIn}</td><td>${czk(v)}${f.currency !== "CZK" ? `<div class="isin">${nf(last(f.curValues), 2)} ${f.currency}</div>` : ""}</td><td>${czk(inv)}</td>
+      <td>${f.pricedIn}</td><td>${czk(v)}${f.currency !== "CZK" ? `<div class="isin">${abs(nf(last(f.curValues), 2) + " " + f.currency)}</div>` : ""}</td><td>${czk(inv)}</td>
       <td class="${cls(v == null ? null : v - inv)}">${v == null ? "–" : pct(v / inv - 1)}</td>
-      <td class="${cls(v == null || h == null ? null : v - h)}">${v == null || h == null ? "–" : pct(v / h - 1)}</td><td>${nf(last(f.units), 4)}</td>`;
+      <td class="${cls(v == null || h == null ? null : v - h)}">${v == null || h == null ? "–" : pct(v / h - 1)}</td><td>${abs(nf(last(f.units), 4))}</td>`;
     const detail = document.createElement("tr"); detail.style.display = "none";
     detail.innerHTML = `<td colspan="7" style="text-align:left"><div id="b-f${n}"></div></td>`;
     tr.onclick = () => {
@@ -369,8 +389,8 @@ function renderD(el) {
     } else {
       const f = D.funds.find(f => f.isin === sel);
       detail.innerHTML = `<h1>${f.name}</h1><div class="facts"><div><b>ISIN</b>${f.isin}</div><div><b>Priced in</b>${f.pricedIn}</div>
-        <div><b>Value</b>${czk(last(f.values))}${f.currency !== "CZK" && f.values ? ` (${nf(last(f.curValues), 2)} ${f.currency})` : ""}</div>
-        <div><b>Invested</b>${czk(last(f.invested))}</div><div><b>Units</b>${nf(last(f.units), 4)}</div></div>
+        <div><b>Value</b>${czk(last(f.values))}${f.currency !== "CZK" && f.values ? ` (${abs(nf(last(f.curValues), 2) + " " + f.currency)})` : ""}</div>
+        <div><b>Invested</b>${czk(last(f.invested))}</div><div><b>Units</b>${abs(nf(last(f.units), 4))}</div></div>
         ${f.notValued ? `<p class="warn">Not valued: ${f.notValued}</p>` : ""}<div id="d-chart"></div>`;
       drawFund("d-chart", f, Math.max(500, innerHeight - 260));
     }
@@ -395,6 +415,18 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", e => {
 });
 labelTheme();
 
+// ---------- privacy ----------
+const privBtn = document.getElementById("private");
+const labelPrivate = () => privBtn.textContent = isPrivate() ? "◉ Private" : "◎ Amounts shown";
+privBtn.onclick = () => {
+  const on = !isPrivate();
+  if (on) document.documentElement.dataset.private = ""; else delete document.documentElement.dataset.private;
+  try { localStorage.setItem("private", on ? "1" : "0"); } catch (e) {}
+  labelPrivate();
+  document.querySelectorAll(".js-plotly-plot").forEach(privacy);
+};
+labelPrivate();
+
 // ---------- switcher ----------
 const KEYS = ["A", "B", "C", "D"], RENDER = { B: renderB, C: renderC, D: renderD }, rendered = new Set(["A"]);
 function show(k) {
@@ -411,6 +443,7 @@ function show(k) {
       Plotly.relayout(g, { paper_bgcolor: THEME.paper_bgcolor, plot_bgcolor: THEME.plot_bgcolor, "font.family": THEME.font.family,
         legend: { ...THEME.legend, ...legendFor(g.data.length) }, margin: { ...THEME.margin, t: titled ? 56 : 16 } });
       recolor(g);
+      privacy(g);
     });
   }
   window.dispatchEvent(new Event("resize")); // plotly charts drawn while hidden need their size again
