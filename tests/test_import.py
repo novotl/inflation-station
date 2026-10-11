@@ -36,6 +36,34 @@ def test_cash_deposit_rows_do_not_produce_purchases(tmp_path: Path) -> None:
     )
 
 
+def test_renamed_cash_deposit_rows_do_not_produce_purchases(tmp_path: Path) -> None:
+    assert run("--data-dir", tmp_path, "import", FIXTURES / "jt_export_cash_deposits.csv") == (
+        0,
+        "0 Purchases added, 0 already present.\n",
+        "",
+    )
+
+
+def test_deposit_row_carrying_an_isin_is_an_unknown_movement_type(tmp_path: Path) -> None:
+    transfer = tmp_path / "transfer.csv"
+    # Put an ISIN on the first cash deposit row.
+    transfer.write_text(
+        EXPORT.read_text(encoding="utf-8").replace(
+            ';;;;"8 000,00";CZK;;;;900100001', ';;;;"8 000,00";CZK;LU1756523376;;;900100001', 1
+        ),
+        encoding="utf-8",
+    )
+
+    assert run("--data-dir", tmp_path, "import", transfer) == (
+        1,
+        "",
+        (
+            "Error: transfer.csv row 2 (ID pohybu 900100001): "
+            "unknown movement type 'Vklad - vyrovnání nákupu CP klienta - Vklad pro obchod'\n"
+        ),
+    )
+
+
 def test_reimporting_the_same_export_adds_nothing(tmp_path: Path) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
 
