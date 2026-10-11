@@ -18,6 +18,9 @@ MAX_BUSINESS_DAYS = 5
 # Months between a price index's last month and today's before it is out of date. Both indices publish a month by the
 # end of the next, so on any day of August June should be out, and May alone is two months behind.
 MAX_MONTHS = 2
+# Days between a fund's last two prices beyond which it is priced monthly, and judged by MAX_MONTHS like an index:
+# well over a daily fund's longest holiday gap, well under a month.
+MONTHLY_GAP_DAYS = 20
 # date.weekday() of Saturday; Monday is 0.
 SATURDAY = 5
 
@@ -35,10 +38,16 @@ def out_of_date(
     Series with nothing stored are left out. `fund_names` names the funds by ISIN; prices of other funds are ignored.
     """
     warnings = []
-    last_price = _last((p.isin, p.day) for p in prices)
+    last_prices = _last_two((p.isin, p.day) for p in prices)
     for isin, name in fund_names.items():
-        last = last_price.get(isin)
-        if last is not None and _business_days(last, today) > MAX_BUSINESS_DAYS:
+        if isin not in last_prices:
+            continue
+        last, previous = last_prices[isin]
+        if previous is not None and (last - previous).days > MONTHLY_GAP_DAYS:
+            stale = _months_between(last, today) > MAX_MONTHS
+        else:
+            stale = _business_days(last, today) > MAX_BUSINESS_DAYS
+        if stale:
             warnings.append(f"{name} ({isin}) prices end on {last}; run inflation-station fetch-prices")
     for currency, last in sorted(_last((r.currency, r.day) for r in rates).items()):
         if _business_days(last, today) > MAX_BUSINESS_DAYS:
@@ -54,6 +63,21 @@ def _last(points: Iterable[tuple[str, date]]) -> dict[str, date]:
     last: dict[str, date] = {}
     for key, day in points:
         last[key] = max(day, last.get(key, day))
+    return last
+
+
+def _last_two(points: Iterable[tuple[str, date]]) -> dict[str, tuple[date, date | None]]:
+    """The latest day by key, and the one before it, if any."""
+    last: dict[str, tuple[date, date | None]] = {}
+    for key, day in points:
+        if key not in last:
+            last[key] = (day, None)
+            continue
+        latest, previous = last[key]
+        if day > latest:
+            last[key] = (day, latest)
+        elif day < latest and (previous is None or day > previous):
+            last[key] = (latest, day)
     return last
 
 
