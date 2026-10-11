@@ -13,8 +13,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 PURCHASE_MOVEMENT = "Investice klienta (vklad)"
-# J&T keeps renaming cash deposits ("Vklad - vyrovnání nákupu CP klienta - …", "Vklad klienta - <n>"),
-# so they're recognised by shape: a "Vklad…" movement with no ISIN.
 CASH_DEPOSIT_PREFIX = "Vklad"
 
 # The columns read from the export, each named once.
@@ -82,7 +80,7 @@ def read_export(path: Path) -> list[Purchase]:
 
 def _purchase(row: dict[str, str]) -> Purchase | None:
     movement_type = row[MOVEMENT_TYPE]
-    if movement_type.startswith(CASH_DEPOSIT_PREFIX) and not row[ISIN]:
+    if _is_cash_deposit(row):
         return None
     if movement_type != PURCHASE_MOVEMENT:
         msg = f"unknown movement type {movement_type!r}"
@@ -105,6 +103,11 @@ def _purchase(row: dict[str, str]) -> Purchase | None:
         fee=_decimal(row, FEE),
         fee_currency=row[FEE_CURRENCY],
     )
+
+
+def _is_cash_deposit(row: dict[str, str]) -> bool:
+    """A "Vklad…" movement with no ISIN. J&T keeps renaming these ("Vklad klienta - <n>", …), so match by shape."""
+    return row[MOVEMENT_TYPE].startswith(CASH_DEPOSIT_PREFIX) and not row[ISIN]
 
 
 def _date(row: dict[str, str], column: str) -> date:
