@@ -241,3 +241,24 @@ def test_lines_without_a_title_are_not_a_statement() -> None:
 def test_statement_without_a_contract_number_fails() -> None:
     with pytest.raises(InflationStationError, match=re.escape("x.pdf has no Číslo smlouvy")):
         investika.statement("x.pdf", ["  Pohyby na peněžním účtu", ""])
+
+
+@pytest.mark.parametrize(
+    ("original", "broken", "error"),
+    [
+        (
+            "Debet            5 000,00 CZK",
+            "Kredit            5 000,00 CZK",
+            "cash.txt row 'Odchozí platba z VÚ na investici' on 03.08.2026: Typ is 'Kredit', expected 'Debet'",
+        ),
+        (
+            "Odchozí platba z VÚ na investici            Debet",
+            "Odchozí platba z VÚ na investici Debet",
+            "cash.txt row on 03.08.2026: has 3 columns, expected 4 or 5",
+        ),
+    ],
+)
+def test_malformed_cash_row_fails(original: str, broken: str, error: str) -> None:
+    lines = (INVESTIKA / "cash.txt").read_text(encoding="utf-8").replace(original, broken, 1).splitlines()
+    with pytest.raises(InflationStationError, match=f"^{re.escape(error)}$"):
+        investika.purchases([investika.statement("cash.txt", lines), statement("holdings.txt")])

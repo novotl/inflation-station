@@ -8,7 +8,7 @@ by runs of spaces.
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from pypdf import PdfReader
 from pypdf.errors import PyPdfError
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 CASH = "Pohyby na peněžním účtu"
 HOLDINGS = "Transakce na majetkovém účtu"
 KIND_NAMES = {CASH: "cash", HOLDINGS: "holdings"}
-CONTRACT = "Číslo smlouvy:"
+CONTRACT = "Číslo smlouvy"
 
 # Cash statement rows.
 PAYMENT = "Odchozí platba z VÚ na investici"
@@ -56,6 +56,11 @@ class Statement:
     lines: list[str]
 
 
+class _Payment(NamedTuple):
+    amount: Decimal
+    written: str  # as the statement writes it, for messages
+
+
 class RowError(Exception):
     """A problem with one row; the caller adds which statement and row."""
 
@@ -84,11 +89,11 @@ def _contract(name: str, lines: list[str]) -> str:
     """The contract number, on the line after its label."""
     stripped = [line.strip() for line in lines]
     for i, line in enumerate(stripped):
-        if line == CONTRACT:
+        if line == f"{CONTRACT}:":
             value = next((v for v in stripped[i + 1 :] if v), "")
             if value:
                 return value
-    msg = f"{name} has no {CONTRACT.removesuffix(':')}"
+    msg = f"{name} has no {CONTRACT}"
     raise InflationStationError(msg)
 
 
@@ -99,7 +104,7 @@ def purchases(statements: Iterable[Statement]) -> list[Purchase]:
         payments = _Payments(cash)
         for cells, next_cells in _holdings_rows(holdings):
             try:
-                result.append(_issue(holdings.contract, cells, next_cells, payments))
+                result.append(_purchase(holdings.contract, cells, next_cells, payments))
             except RowError as e:
                 msg = f"{holdings.name} row {cells[2]!r} ordered {cells[-1]}: {e}"
                 raise InflationStationError(msg) from e
@@ -124,7 +129,7 @@ def _pairs(statements: Iterable[Statement]) -> list[tuple[Statement, Statement]]
                     f"but no {KIND_NAMES[other]} statement"
                 )
     if problems:
-        msg = f"Investika statements come in pairs with the same {CONTRACT.removesuffix(':')}: {'; '.join(problems)}"
+        msg = f"Investika statements come in pairs with the same {CONTRACT}: {'; '.join(problems)}"
         raise InflationStationError(msg)
     return [(kinds[CASH][0], kinds[HOLDINGS][0]) for kinds in by_contract.values()]
 
@@ -135,28 +140,35 @@ class _Payments:
     def __init__(self, cash: Statement) -> None:
         """Read the payments; raises on rows it doesn't know."""
         self._cash_name = cash.name
-        self._by_day: dict[date, list[tuple[Decimal, str]]] = {}
+        self._by_day: dict[date, list[_Payment]] = {}
         self._claimed: set[date] = set()
         for line in cash.lines:
             cells = _COLUMN_GAP.split(line.strip())
             match = _CASH_DATE.fullmatch(cells[0])
-            if match and len(cells) >= 4:  # noqa: PLR2004 - date, description, [symbol], type, amount
-                try:
-                    self._read_row(match["date"], cells[1], cells[-1])
-                except RowError as e:
-                    msg = f"{cash.name} row {cells[1]!r} on {cells[0]}: {e}"
-                    raise InflationStationError(msg) from e
+            if not match:
+                continue
+            if len(cells) not in {4, 5}:  # date, description, [symbol], type, amount
+                msg = f"{cash.name} row on {cells[0]}: has {len(cells)} columns, expected 4 or 5"
+                raise InflationStationError(msg)
+            try:
+                self._read_row(match["date"], cells[1], cells[-2], cells[-1])
+            except RowError as e:
+                msg = f"{cash.name} row {cells[1]!r} on {cells[0]}: {e}"
+                raise InflationStationError(msg) from e
 
-    def _read_row(self, day: str, description: str, amount: str) -> None:
+    def _read_row(self, day: str, description: str, kind: str, amount_cell: str) -> None:
         if description == PAYMENT:
-            amount = _cash_amount(amount)
-            self._by_day.setdefault(_date(day, "Datum"), []).append((_decimal(amount, "Částka"), amount))
+            if kind != "Debet":
+                msg = f"Typ is {kind!r}, expected 'Debet'"
+                raise RowError(msg)
+            amount = _cash_amount(amount_cell)
+            self._by_day.setdefault(_date(day, "Datum"), []).append(_Payment(_decimal(amount, "Částka"), amount))
         elif not _is_skipped(description):
             msg = "unknown transaction type"
             raise RowError(msg)
 
-    def claim(self, order_day: date) -> tuple[Decimal, str]:
-        """The payment made on an issue's order day, as a number and as written; raises unless there is exactly one."""
+    def claim(self, order_day: date) -> _Payment:
+        """The payment made on an issue's order day; raises unless there is exactly one."""
         matches = self._by_day.get(order_day, [])
         if not matches:
             msg = f"no {PAYMENT!r} on its order date in {self._cash_name}"
@@ -190,7 +202,7 @@ def _holdings_rows(holdings: Statement) -> list[tuple[list[str], list[str]]]:
     ]
 
 
-def _issue(contract: str, cells: list[str], next_cells: list[str], payments: _Payments) -> Purchase:
+def _purchase(contract: str, cells: list[str], next_cells: list[str], payments: _Payments) -> Purchase:
     """The Purchase in a holdings row, claiming the payment it was bought with."""
     if cells[2] != ISSUE:
         msg = "unknown transaction type"
@@ -211,10 +223,10 @@ def _issue(contract: str, cells: list[str], next_cells: list[str], payments: _Pa
         msg = f"Částka is in {net_currency!r}, expected 'CZK'"
         raise RowError(msg)
 
-    gross, gross_text = payments.claim(_date(ordered, "Datum pokynu"))
+    gross, gross_written = payments.claim(_date(ordered, "Datum pokynu"))
     net_amount = _decimal(net, "Částka")
     if gross < net_amount:
-        msg = f"payment {gross_text} is less than the issue's Částka {net}"
+        msg = f"payment {gross_written} is less than the issue's Částka {net}"
         raise RowError(msg)
 
     try:
