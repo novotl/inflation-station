@@ -1,6 +1,8 @@
 import json
+import re
 import socket
 from datetime import date
+from html import unescape
 from pathlib import Path
 
 import pytest
@@ -269,3 +271,111 @@ def test_portfolio_invested_and_hurdle_lines_hover_with_their_czk_value_only(tmp
     for name in ("Portfolio value", "Amount invested", "Inflation hurdle (ČSÚ CPI)"):
         assert lines[name]["hovertemplate"] == "%{y:,.2f} CZK"
         assert "customdata" not in lines[name]
+
+
+def sections(chart: Path) -> list[dict]:
+    """Each fund's section below the overall chart, in page order: its heading, its note (or None) and its traces."""
+    html = chart.read_text(encoding="utf-8")
+    found = []
+    for section in html.split('<section class="fund">')[1:]:
+        note = re.search(r'<p class="note">(.*?)</p>', section)
+        after_div_id = section.split("Plotly.newPlot(", 1)[1].split(",", 1)[1].lstrip()
+        data, _ = json.JSONDecoder().raw_decode(after_div_id)
+        found.append(
+            {
+                "heading": unescape(section.split("<h2>", 1)[1].split("</h2>", 1)[0]),
+                "note": unescape(note[1]) if note else None,
+                "traces": {trace["name"]: trace for trace in data},
+            }
+        )
+    return found
+
+
+def test_each_fund_has_a_section_largest_value_first_headed_by_its_name_isin_and_currency(tmp_path: Path) -> None:
+    fetch_everything(tmp_path)
+    run("--data-dir", tmp_path, "chart")
+
+    # On 1 Jul 2021: FF World 116 893 CZK, J&T Money 99 616 CZK, Franklin 10 767 CZK, Amundi 4 972 CZK.
+    assert [s["heading"] for s in sections(tmp_path / "chart.html")] == [
+        "FF - World Fund A-ACC-CZK · LU1756523376 · priced in CZK",
+        "J&T MONEY A CZK OPF · CZ0008473808 · priced in CZK",
+        "FTIF-Franklin Technology Fund-A(acc)EUR · LU0260870158 · priced in EUR",
+        "AMUNDI FUNDS US PIONEER FUND - A EUR (C) · LU1883872332 · priced in EUR",
+    ]
+
+
+def test_a_funds_section_charts_its_value_amount_invested_and_hurdles_in_czk(tmp_path: Path) -> None:
+    fetch_everything(tmp_path)
+    run("--data-dir", tmp_path, "chart")
+
+    franklin = sections(tmp_path / "chart.html")[2]
+    lines = franklin["traces"]
+    assert franklin["note"] is None
+    assert set(lines) == {
+        "Value",
+        "Amount invested",
+        "Inflation hurdle (ČSÚ CPI)",
+        "Inflation hurdle (ČSÚ CPI, estimated)",
+        "Inflation hurdle (Eurostat HICP)",
+        "Inflation hurdle (Eurostat HICP, estimated)",
+    }
+    # Hovers as the fund's line on the overall chart does.
+    assert hover(lines["Value"], -1) == f"{11.15 * 37.86 * 25.505:,.2f} CZK ({11.15 * 37.86:,.2f} EUR) · 11.15 units"
+    # Two Purchases of 5 000 CZK, fees included: on 18 May and 14 Jun 2021.
+    invested = lines["Amount invested"]
+    assert (invested["y"][0], invested["y"][-1], invested["line"]["shape"]) == (0, 10000, "hv")
+    assert invested["hovertemplate"] == "%{y:,.2f} CZK"
+    # Only Franklin's Purchases grow: 5 000 CZK from 18 May (of 31 days) and 5 000 CZK from 14 Jun (of 30), at May's
+    # 0.2 %, carried forward.
+    may = 1.002
+    estimated = lines["Inflation hurdle (ČSÚ CPI, estimated)"]
+    assert estimated["y"][-1] == pytest.approx(5000 * may ** (2 - 17 / 31) + 5000 * may ** (1 - 13 / 30))
+    assert estimated["line"]["dash"] == "dot"
+    assert lines["Inflation hurdle (Eurostat HICP)"]["line"]["dash"] == "dash"
+
+
+def test_funds_that_cannot_be_valued_get_a_section_last_saying_why(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", EXPORT)
+    run("--data-dir", tmp_path, "fetch-prices")
+    run("--data-dir", tmp_path, "fetch-cpi")
+    run("--data-dir", tmp_path, "chart")
+
+    found = sections(tmp_path / "chart.html")
+    # The EUR funds have no rates, so only the CZK funds are valued.
+    assert [s["heading"].split(" · ")[1] for s in found] == [
+        "LU1756523376",
+        "CZ0008473808",
+        "LU0260870158",
+        "LU1883872332",
+    ]
+    franklin = found[2]
+    assert franklin["note"] == "Not valued: no EUR rates stored"
+    assert set(franklin["traces"]) == {
+        "Amount invested",
+        "Inflation hurdle (ČSÚ CPI)",
+        "Inflation hurdle (ČSÚ CPI, estimated)",
+        "Inflation hurdle (Eurostat HICP)",
+        "Inflation hurdle (Eurostat HICP, estimated)",
+    }
+    # With no value line, amount invested carries the units held.
+    assert hover(franklin["traces"]["Amount invested"], -1) == "10,000.00 CZK · 11.15 units"
+    assert found[0]["note"] is None
+
+
+def test_without_prices_a_funds_section_is_headed_by_the_currency_it_was_bought_in(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", EXPORT)
+    run("--data-dir", tmp_path, "chart")
+
+    amundi = next(s for s in sections(tmp_path / "chart.html") if "LU1883872332" in s["heading"])
+    assert amundi["heading"] == "AMUNDI FUNDS US PIONEER FUND - A EUR (C) · LU1883872332 · priced in EUR"
+    assert amundi["note"] == "Not valued: no prices stored"
+
+
+def test_the_page_with_fund_sections_is_one_self_contained_file(tmp_path: Path) -> None:
+    fetch_everything(tmp_path)
+    run("--data-dir", tmp_path, "chart")
+
+    html = (tmp_path / "chart.html").read_text(encoding="utf-8")
+    assert 'src="http' not in html
+    assert html.count("Plotly.newPlot(") == 1 + 4  # the overall chart and one per fund
+    assert set(traces(tmp_path / "chart.html")) >= {"Portfolio value", "Amount invested"}  # the overall chart first

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -322,3 +323,58 @@ def test_funds_not_valued_have_no_fund_currency_value() -> None:
 
     assert t.fund_currency_values == {}
     assert t.fund_currencies == {}
+
+
+def test_amount_invested_by_fund_counts_only_that_funds_purchases() -> None:
+    t = timeline(
+        [
+            purchase(date(2021, 6, 13), "8000.00"),
+            purchase(date(2021, 6, 14), "1234.56", isin=EUR_FUND),
+            purchase(date(2021, 6, 15), "5000.00"),
+        ],
+        today=date(2021, 6, 15),
+    )
+
+    assert t.fund_amount_invested == {
+        CZK_FUND: (Decimal("8000.00"), Decimal("8000.00"), Decimal("13000.00")),
+        EUR_FUND: (Decimal(0), Decimal("1234.56"), Decimal("1234.56")),
+    }
+
+
+def test_the_hurdle_by_fund_grows_only_that_funds_purchases() -> None:
+    t = timeline(
+        [purchase(date(2021, 5, 1), "1000"), purchase(date(2021, 6, 1), "500", isin=OTHER_CZK_FUND)],
+        index_levels=[
+            level(date(2021, 5, 1), "100"),
+            level(date(2021, 6, 1), "110"),
+            level(date(2021, 7, 1), "121"),
+            level(date(2021, 8, 1), "121"),
+        ],
+        today=date(2021, 7, 1),
+    )
+
+    czk_fund, other_fund = t.fund_hurdles[CZK_FUND][CSU_CPI], t.fund_hurdles[OTHER_CZK_FUND][CSU_CPI]
+    assert (czk_fund.values[0], czk_fund.values[-1]) == (Decimal(1000), Decimal(1210))
+    # Nothing is invested in the other fund before 1 Jun, so it has nothing to keep up with.
+    assert (other_fund.values[0], other_fund.values[-1]) == (Decimal(0), Decimal(550))
+    assert czk_fund.estimated_from == other_fund.estimated_from == t.hurdles[CSU_CPI].estimated_from
+
+
+def test_there_are_no_hurdles_by_fund_without_index_levels() -> None:
+    t = timeline([purchase(date(2021, 6, 13), "1000")], today=date(2021, 6, 13))
+
+    assert t.fund_hurdles == {CZK_FUND: {}}
+
+
+def test_purchase_currencies_come_from_each_funds_latest_purchase() -> None:
+    t = timeline(
+        [
+            replace(purchase(date(2021, 6, 14), "1000", isin=EUR_FUND), unit_price_currency="EUR"),
+            purchase(date(2021, 6, 13), "1000", isin=EUR_FUND),
+            purchase(date(2021, 6, 13), "1000"),
+        ],
+        today=date(2021, 6, 14),
+    )
+
+    # No prices are needed, so even funds that can't be valued have one.
+    assert t.purchase_currencies == {EUR_FUND: "EUR", CZK_FUND: "CZK"}
