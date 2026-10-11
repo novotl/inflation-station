@@ -78,8 +78,7 @@ def _by_last_value(timeline: Timeline) -> list[str]:
 
 def _fund_section(timeline: Timeline, isin: str) -> str:
     """The fund's heading, why it can't be valued if it can't, and its chart: all in CZK."""
-    currency = timeline.fund_currencies.get(isin, timeline.purchase_currencies[isin])
-    heading = f"{timeline.fund_names[isin]} · {isin} · priced in {currency}"
+    heading = f"{timeline.fund_names[isin]} · {isin} · priced in {timeline.priced_in[isin]}"
     figure = go.Figure(layout={"yaxis_title": "CZK", "hovermode": "x unified"})
     if isin in timeline.fund_values:
         customdata, hovertemplate = _fund_hover(timeline, isin)
@@ -91,7 +90,7 @@ def _fund_section(timeline: Timeline, isin: str) -> str:
             hovertemplate=hovertemplate,
         )
     # With no value line to show them, the units held go on the amount invested.
-    units = (
+    invested_hover = (
         {
             "customdata": [[_units(units)] for units in timeline.units_held[isin]],
             "hovertemplate": f"{HOVER_CZK} · %{{customdata[0]}} units",
@@ -104,7 +103,7 @@ def _fund_section(timeline: Timeline, isin: str) -> str:
         y=_floats(timeline.fund_amount_invested[isin]),
         name="Amount invested",
         line_shape="hv",
-        **units,
+        **invested_hover,
     )
     for series, hurdle in timeline.fund_hurdles[isin].items():
         _add_hurdle(figure, timeline.dates, hurdle, series)

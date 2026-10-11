@@ -366,7 +366,7 @@ def test_there_are_no_hurdles_by_fund_without_index_levels() -> None:
     assert t.fund_hurdles == {CZK_FUND: {}}
 
 
-def test_purchase_currencies_come_from_each_funds_latest_purchase() -> None:
+def test_funds_without_prices_are_priced_in_the_currency_of_their_latest_purchase() -> None:
     t = timeline(
         [
             replace(purchase(date(2021, 6, 14), "1000", isin=EUR_FUND), unit_price_currency="EUR"),
@@ -376,5 +376,24 @@ def test_purchase_currencies_come_from_each_funds_latest_purchase() -> None:
         today=date(2021, 6, 14),
     )
 
-    # No prices are needed, so even funds that can't be valued have one.
-    assert t.purchase_currencies == {EUR_FUND: "EUR", CZK_FUND: "CZK"}
+    assert t.priced_in == {EUR_FUND: "EUR", CZK_FUND: "CZK"}
+
+
+def test_funds_with_prices_are_priced_in_the_currencies_of_their_prices_valued_or_not() -> None:
+    t = timeline(
+        [
+            purchase(date(2021, 6, 13), "1000"),
+            purchase(date(2021, 6, 13), "1000", isin=EUR_FUND),
+            purchase(date(2021, 6, 13), "1000", isin=OTHER_CZK_FUND),
+        ],
+        prices=[
+            price(date(2021, 6, 13), "40", currency="EUR"),
+            price(date(2021, 6, 13), "40", isin=EUR_FUND, currency="EUR"),
+            price(date(2021, 6, 13), "1000", isin=EUR_FUND, currency="CZK"),
+            price(date(2021, 6, 13), "1", isin=OTHER_CZK_FUND),
+        ],
+        today=date(2021, 6, 13),
+    )
+
+    # The first fund was bought in CZK but is priced in EUR, which has no rates.
+    assert t.priced_in == {CZK_FUND: "EUR", EUR_FUND: "CZK, EUR", OTHER_CZK_FUND: "CZK"}
