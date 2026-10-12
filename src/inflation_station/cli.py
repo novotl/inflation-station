@@ -127,14 +127,15 @@ def chart(data_dir: Path) -> None:
         index_levels = store.index_levels()
         today = clock.today()
         t = timeline(purchases, prices=prices, rates=rates, index_levels=index_levels, today=today)
-        path = write_chart(t, data_dir)
+        # Only warnings, on stderr and on the page: the chart is still right up to each series' last point.
+        warnings = out_of_date(
+            prices=prices, rates=rates, index_levels=index_levels, fund_names=t.fund_names, today=today
+        )
+        path = write_chart(t, data_dir, warnings=warnings)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
     _report_not_valued(t, {p.currency for p in prices})
-    # Only a warning: the chart is still right up to each series' last point.
-    for warning in out_of_date(
-        prices=prices, rates=rates, index_levels=index_levels, fund_names=t.fund_names, today=today
-    ):
+    for warning in warnings:
         click.echo(f"Out of date: {warning}", err=True)
     click.echo(f"Chart written to {path}")
 

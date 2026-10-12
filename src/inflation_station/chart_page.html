@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portfolio</title>
+<script>
+  // The stored light/dark choice, else the system's, and private mode: set before anything paints.
+  (() => {
+    const stored = key => { try { return localStorage.getItem(key); } catch (e) { return null; } };
+    document.documentElement.dataset.theme = stored("theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    if (stored("private") === "1") document.documentElement.dataset.private = "";
+  })();
+</script>
+<style>
+{{STYLE}}
+</style>
+<script>{{PLOTLY}}</script>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <span class="brand">inflation-station</span>
+    <nav id="switcher" title="Layouts (← / → to cycle)"></nav>
+    <span class="top-right">
+      <span class="asof" id="asof"></span>
+      <button id="private" title="Blur absolute amounts; percentages stay readable"></button>
+      <button id="theme" title="Switch light/dark"></button>
+    </span>
+  </div>
+</header>
+<main>
+  <div class="notices" id="warnings"></div>
+  <div class="view" id="v-dashboard" data-name="Dashboard"></div>
+  <div class="view" id="v-relative" data-name="Relative to inflation"></div>
+  <div class="view" id="v-funds" data-name="Fund strip"></div>
+</main>
+<script type="application/json" id="data">{{DATA}}</script>
+<script>
+{{SCRIPT}}
+</script>
+</body>
+</html>

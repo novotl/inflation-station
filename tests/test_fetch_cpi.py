@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 from click.testing import CliRunner
 from conftest import CPI_CSV, CSU, EUROSTAT, HICP_JSON
-from test_chart import traces
+from test_chart import overall
 
 from inflation_station.cli import main
 from inflation_station.errors import InflationStationError
@@ -126,9 +126,7 @@ def test_a_csv_starting_in_a_later_month_continues_from_the_stored_levels(
     )
     run("--data-dir", data_dir, "chart")
     estimated = "Inflation hurdle (ČSÚ CPI, estimated)"
-    assert traces(data_dir / "chart.html")[estimated]["y"] == pytest.approx(
-        traces(reference / "chart.html")[estimated]["y"]
-    )
+    assert overall(data_dir)[estimated]["y"] == pytest.approx(overall(reference)[estimated]["y"])
 
 
 def test_when_eurostat_fails_the_csu_cpi_is_still_stored_and_the_failure_names_eurostat(
