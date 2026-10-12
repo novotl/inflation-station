@@ -72,11 +72,11 @@ def read_export(path: Path) -> list[LedgerEntry]:
         raise InflationStationError(msg) from e
     # Exports are full-history, so a row has the same identity in every one of them. Exact repeats are told apart by
     # how many came before, counted oldest (last) first, so a repeat in a later export only adds to the count.
-    seen: Counter[tuple[str, ...]] = Counter()
+    occurrences: Counter[tuple[str, ...]] = Counter()
     entries = []
     for line_num, row in reversed(rows):
         try:
-            entry = _entry(row, seen)
+            entry = _entry(row, occurrences)
         except RowError as e:
             msg = f"{path.name} row {line_num}: {e}"
             raise InflationStationError(msg) from e
@@ -84,7 +84,7 @@ def read_export(path: Path) -> list[LedgerEntry]:
     return entries[::-1]
 
 
-def _entry(row: dict[str, str], seen: Counter[tuple[str, ...]]) -> LedgerEntry:
+def _entry(row: dict[str, str], occurrences: Counter[tuple[str, ...]]) -> LedgerEntry:
     row_type = row[TYPE].split(TYPE_SEPARATOR, 1)[0]
     kind = KINDS.get(row_type)
     if kind is None:
@@ -104,11 +104,12 @@ def _entry(row: dict[str, str], seen: Counter[tuple[str, ...]]) -> LedgerEntry:
         # Units are exported unsigned.
         units = -units if kind == SELL else units
     key = (day.isoformat(), row_type, row[SYMBOL], str(amount), row[CURRENCY])
-    seen[key] += 1
+    # Counted per Account, so one portfolio's rows never shift another's count.
+    occurrences[row[ACCOUNT_ID], *key] += 1
     return LedgerEntry(
         platform="portu",
         account_id=row[ACCOUNT_ID],
-        source_row_id=";".join((*key, str(seen[key]))),
+        source_row_id=";".join((*key, str(occurrences[row[ACCOUNT_ID], *key]))),
         day=day,
         kind=kind,
         isin=isin,

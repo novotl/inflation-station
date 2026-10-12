@@ -10,8 +10,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from inflation_station import ledger as ledgers
 from inflation_station.ledger import DEPOSIT
+from inflation_station.ledger import fund_names as held_fund_names
 from inflation_station.purchase import fund_names
 
 if TYPE_CHECKING:
@@ -102,11 +102,11 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
     dates = tuple(first + timedelta(days=n) for n in range((today - first).days + 1))
 
     isins = sorted({p.isin for p in purchases} | {e.isin for e in ledger if e.isin})
-    by_isin = {isin: [p for p in purchases if p.isin == isin] for isin in isins}
+    purchased = {isin: [p for p in purchases if p.isin == isin] for isin in isins}
     traded = {isin: [e for e in ledger if e.isin == isin] for isin in isins}
     units_held = {
         isin: _running_total(
-            dates, [(p.trade_date, p.units) for p in by_isin[isin]] + [(e.day, e.units) for e in traded[isin]]
+            dates, [(p.trade_date, p.units) for p in purchased[isin]] + [(e.day, e.units) for e in traded[isin]]
         )
         for isin in isins
     }
@@ -123,8 +123,8 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
         currencies = sorted({p.currency for p in fund_prices})
         if currencies:
             priced_in[isin] = ", ".join(currencies)
-        elif by_isin[isin]:
-            priced_in[isin] = max(by_isin[isin], key=lambda p: p.trade_date).unit_price_currency
+        elif purchased[isin]:
+            priced_in[isin] = max(purchased[isin], key=lambda p: p.trade_date).unit_price_currency
         else:
             priced_in[isin] = max(traded[isin], key=lambda e: e.day).currency
         if not fund_prices:
@@ -150,9 +150,9 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
     return Timeline(
         dates=dates,
         amount_invested=_running_total(dates, invested),
-        fund_amount_invested={isin: _amount_invested(dates, bought) for isin, bought in by_isin.items()},
+        fund_amount_invested={isin: _amount_invested(dates, bought) for isin, bought in purchased.items()},
         # A fund's name on a Platform where you pick the funds wins over its ticker in a Managed Account.
-        fund_names=dict(sorted((ledgers.fund_names(ledger) | fund_names(purchases)).items())),
+        fund_names=dict(sorted((held_fund_names(ledger) | fund_names(purchases)).items())),
         units_held=units_held,
         fund_values=fund_values,
         fund_currency_values=fund_currency_values,
@@ -166,7 +166,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
                 series: _hurdle(dates, [(p.trade_date, p.gross_czk) for p in bought], levels)
                 for series, levels in levels_by_series.items()
             }
-            for isin, bought in by_isin.items()
+            for isin, bought in purchased.items()
         },
         cash={
             currency: _running_total(dates, [(e.day, e.amount) for e in ledger if e.currency == currency])

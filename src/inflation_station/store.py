@@ -205,11 +205,7 @@ class Store:
                     already_present += 1
                     continue
                 seen.add(_key(entry))
-                session.add(
-                    LedgerEntryRecord(
-                        **{f.name: getattr(entry, f.name) for f in fields(LedgerEntry)}, imported_at=imported_at
-                    )
-                )
+                session.add(_ledger_record(entry, imported_at))
                 added += 1
         return Added(added=added, already_present=already_present)
 
@@ -279,10 +275,7 @@ class Store:
 
     def ledger(self) -> list[LedgerEntry]:
         with Session(self._engine) as session:
-            return [
-                LedgerEntry(**{f.name: getattr(r, f.name) for f in fields(LedgerEntry)})
-                for r in session.scalars(select(LedgerEntryRecord))
-            ]
+            return [_ledger_entry(record) for record in session.scalars(select(LedgerEntryRecord))]
 
     def fund_prices(self) -> list[FundPrice]:
         with Session(self._engine) as session:
@@ -331,3 +324,11 @@ def _record(p: Purchase, imported_at: datetime) -> PurchaseRecord:
 
 def _purchase(r: PurchaseRecord) -> Purchase:
     return Purchase(**{f.name: getattr(r, f.name) for f in fields(Purchase)})
+
+
+def _ledger_record(e: LedgerEntry, imported_at: datetime) -> LedgerEntryRecord:
+    return LedgerEntryRecord(**{f.name: getattr(e, f.name) for f in fields(LedgerEntry)}, imported_at=imported_at)
+
+
+def _ledger_entry(r: LedgerEntryRecord) -> LedgerEntry:
+    return LedgerEntry(**{f.name: getattr(r, f.name) for f in fields(LedgerEntry)})
