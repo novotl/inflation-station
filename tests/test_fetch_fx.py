@@ -79,7 +79,7 @@ def test_only_currencies_that_purchases_are_priced_in_are_fetched(tmp_path: Path
 
     assert run("--data-dir", tmp_path, "fetch-fx") == (
         0,
-        "Every Purchase is priced in CZK; no rates to fetch.\n",
+        "Every Purchase and all Cash is in CZK; no rates to fetch.\n",
         "",
     )
 
@@ -88,7 +88,7 @@ def test_fetch_fx_with_an_empty_database_fails_with_a_readable_message(tmp_path:
     assert run("--data-dir", tmp_path, "fetch-fx") == (
         1,
         "",
-        "Error: no Purchases to fetch rates for yet; import first: inflation-station import <file>...\n",
+        "Error: no Purchases or Deposits to fetch rates for yet; import first: inflation-station import <file>...\n",
     )
 
 

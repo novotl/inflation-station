@@ -117,8 +117,11 @@ def _overall(timeline: Timeline) -> list[dict[str, Any]]:
 
 
 def _composition(timeline: Timeline, order: Sequence[str]) -> list[dict[str, Any]]:
-    """`_overall` with the portfolio value split: each valued fund's value stacked, largest on top."""
-    traces = [
+    """`_overall` with the portfolio value split: Cash at the bottom, then each valued fund's value, largest on top."""
+    traces = []
+    if timeline.cash_value is not None:
+        traces.append(_line(timeline.dates, timeline.cash_value, "Cash", stackgroup="value", line={"width": 0}))
+    traces += [
         _fund_value(timeline, isin, timeline.fund_names[isin], stackgroup="value", line={"width": 0})
         for isin in reversed(order)
         if isin in timeline.fund_values
