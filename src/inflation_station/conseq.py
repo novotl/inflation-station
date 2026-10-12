@@ -9,15 +9,11 @@ from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING
 from urllib.parse import urljoin
 
 from inflation_station import web
 from inflation_station.errors import InflationStationError
 from inflation_station.fund_price import FundPrice
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
 
 # The hand-edited mapping from ISIN to Conseq fund page.
 FUND_PAGES = Path(__file__).parent / "conseq_funds.toml"
@@ -35,19 +31,9 @@ _HEADER = ["Datum", "Cena", "Měna"]
 _EXCEL_EPOCH = date(1899, 12, 30)
 
 
-def fund_pages(funds: Mapping[str, str]) -> dict[str, str]:
-    """The Conseq fund page of each fund in `funds` (ISIN -> fund name). Raises naming every fund without one."""
-    mapping = tomllib.loads(FUND_PAGES.read_text(encoding="utf-8"))
-    unmapped = [isin for isin in funds if isin not in mapping]
-    if unmapped:
-        names = ", ".join(f"{funds[isin]} ({isin})" for isin in unmapped)
-        lines = ", ".join(f'{isin} = "<fund page URL>"' for isin in unmapped)
-        msg = (
-            f"no Conseq fund page for {names}. Find the fund on {FUND_LIST}, check the ISIN on its page, "
-            f"and add the page's URL to {FUND_PAGES} as: {lines}"
-        )
-        raise InflationStationError(msg)
-    return {isin: mapping[isin] for isin in funds}
+def fund_pages() -> dict[str, str]:
+    """The Conseq fund page of each fund listed in FUND_PAGES, by ISIN."""
+    return tomllib.loads(FUND_PAGES.read_text(encoding="utf-8"))
 
 
 def price_history(isin: str, page_url: str) -> list[FundPrice]:

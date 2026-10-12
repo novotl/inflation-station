@@ -3,13 +3,15 @@ from typing import TYPE_CHECKING
 
 import click
 
-from inflation_station import clock, cnb, conseq, csu, eurostat
+from inflation_station import clock, cnb, csu, eurostat
 from inflation_station.chart import write_chart
 from inflation_station.errors import InflationStationError
 from inflation_station.freshness import out_of_date
 from inflation_station.imports import read_files
+from inflation_station.ledger import fund_names as held_fund_names
 from inflation_station.price_check import price_warnings
 from inflation_station.price_index import CSU_CPI, EUROSTAT_HICP, NAMES
+from inflation_station.price_sources import price_sources
 from inflation_station.purchase import first_trade_dates, fund_names
 from inflation_station.settings import Settings
 from inflation_station.store import Store, database_exists
@@ -55,19 +57,20 @@ def import_(data_dir: Path, files: tuple[Path, ...]) -> None:
 @main.command("fetch-prices")
 @click.pass_obj
 def fetch_prices(data_dir: Path) -> None:
-    """Download the daily prices of every purchased fund from Conseq."""
+    """Download the daily prices of every purchased or held fund, from Conseq or Yahoo Finance."""
     try:
-        purchases = _stored_purchases(data_dir, "to fetch prices for")
-        funds = fund_names(purchases)
-        pages = conseq.fund_pages(funds)
+        purchases, ledger = _stored_trades(data_dir)
+        funds = dict(sorted((held_fund_names(ledger) | fund_names(purchases)).items()))
+        sources = price_sources(funds)
         store = Store(data_dir)
-        for isin, page in pages.items():
+        for isin, source in sources.items():
             # Stored fund by fund, so a later failure keeps what was fetched before it.
-            result = store.add_fund_prices(conseq.price_history(isin, page))
+            result = store.add_fund_prices(source.fetch())
             click.echo(
                 f"{funds[isin]} ({isin}): {result.added} prices added, {result.already_present} already present."
             )
-        warnings = price_warnings(purchases, store.fund_prices())
+        names = {isin: source.name for isin, source in sources.items()}
+        warnings = price_warnings(purchases, ledger, store.fund_prices(), names)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
     for warning in warnings:
@@ -153,6 +156,20 @@ def _stored_purchases(data_dir: Path, purpose: str) -> list[Purchase]:
         msg = f"no Purchases {purpose} yet; import first: inflation-station import <file>..."
         raise InflationStationError(msg)
     return purchases
+
+
+def _stored_trades(data_dir: Path) -> tuple[list[Purchase], list[LedgerEntry]]:
+    """The stored Purchases and ledger entries; raises if no fund was bought in either. Only reads, like
+    `_stored_purchases`."""
+    store = Store(data_dir) if database_exists(data_dir) else None
+    purchases, ledger = (store.purchases(), store.ledger()) if store else ([], [])
+    if not purchases and not any(e.isin for e in ledger):
+        msg = (
+            "no Purchases or Managed Account buys to fetch prices for yet; import first: "
+            "inflation-station import <file>..."
+        )
+        raise InflationStationError(msg)
+    return purchases, ledger
 
 
 def _stored_purchases_and_ledger(data_dir: Path) -> tuple[list[Purchase], list[LedgerEntry]]:

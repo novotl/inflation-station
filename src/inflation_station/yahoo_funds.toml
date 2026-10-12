@@ -1,0 +1,14 @@
+# Where fetch-prices downloads the daily closes of exchange-traded funds: ISIN = its ticker on Yahoo Finance.
+#
+# A fund is listed on several exchanges, often in different currencies (e.g. SXR7.DE on Xetra in EUR, CSPX.L on the
+# LSE in USD). Pick the listing in the currency you bought it in, as the export shows it (Portu's `Cena`, in `Měna`):
+# open https://finance.yahoo.com/quote/<ticker>, check the fund's name and that "Currency in" matches. A fund must be
+# in this file or in conseq_funds.toml, not both.
+
+# Portu
+IE00B53QG562 = "SXR7.DE" # iShares Core MSCI EMU, Xetra, EUR
+IE00B5BMR087 = "CSPX.L"  # iShares Core S&P 500, LSE, USD
+IE00BCBJG560 = "ZPRS.DE" # SPDR MSCI World Small Cap, Xetra, EUR
+IE00BKM4GZ66 = "IS3N.DE" # iShares Core MSCI EM IMI, Xetra, EUR
+LU0659580079 = "XMK9.DE" # Xtrackers MSCI Japan 4C EUR Hedged, Xetra, EUR
+LU1681044480 = "AMEA.DE" # Amundi MSCI Em Asia, Xetra, EUR
