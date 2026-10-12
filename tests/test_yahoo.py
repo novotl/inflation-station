@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from conftest import CHART
 
 from inflation_station import yahoo
 from inflation_station.errors import InflationStationError
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 SXR7 = "IE00B53QG562"
-SXR7_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/SXR7.DE?period1=0&period2=1625097600&interval=1d"
+SXR7_CHART = CHART.format("SXR7.DE")
 # 1 Jul 2021 09:00 in Frankfurt (CEST), when Xetra opens: the tests' "today".
 TODAY_AT_OPEN = 1625122800
 
