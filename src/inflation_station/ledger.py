@@ -41,7 +41,7 @@ def fund_names(entries: Iterable[LedgerEntry]) -> dict[str, str]:
     return dict(sorted(latest.items()))
 
 
-def first_days(entries: Iterable[LedgerEntry]) -> dict[str, date]:
+def first_cash_days(entries: Iterable[LedgerEntry]) -> dict[str, date]:
     """The day of the first entry moving Cash in each currency, by currency, sorted by currency."""
     first: dict[str, date] = {}
     for e in sorted(entries, key=lambda e: e.day):

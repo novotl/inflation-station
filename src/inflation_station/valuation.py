@@ -86,7 +86,7 @@ class Timeline:
     # Cash in Managed Accounts by currency, for every currency in their ledgers: the sum of the entries dated on or
     # before each day. Negative when a hedging leg goes out a day before the other comes in.
     cash: Mapping[str, tuple[Decimal, ...]]
-    # CZK value of `cash` by currency, for the currencies that can be valued: the balance x the last known CZK rate on
+    # CZK value of `cash` by currency, for the currencies that can be valued: the Cash x the last known CZK rate on
     # or before the day, for currencies other than CZK.
     cash_values: Mapping[str, tuple[Decimal | None, ...]]
     # The sum of `cash_values`; None when no Cash can be valued.
@@ -138,7 +138,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
             not_valued[isin] = NO_PRICES
         elif len(currencies) > 1:
             not_valued[isin] = f"priced in {priced_in[isin]}"
-        elif currencies != [CZK] and not any(r.currency == currencies[0] for r in rates):
+        elif not _has_rates(currencies[0], rates):
             not_valued[isin] = no_rates(currencies[0])
         else:
             fund_currencies[isin] = currencies[0]
@@ -154,14 +154,12 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
     }
     cash_values: dict[str, tuple[Decimal | None, ...]] = {}
     cash_not_valued: dict[str, str] = {}
-    for currency, balances in cash.items():
-        if currency != CZK and not any(r.currency == currency for r in rates):
+    for currency, amounts in cash.items():
+        if not _has_rates(currency, rates):
             cash_not_valued[currency] = no_rates(currency)
         else:
-            # Taken as it is, so a negative balance counts against the value.
-            cash_values[currency] = _zero_when_not_held(
-                balances, _times(balances, _czk_per_unit(dates, currency, rates))
-            )
+            # Taken as it is, so negative Cash counts against the value.
+            cash_values[currency] = _zero_when_not_held(amounts, _times(amounts, _czk_per_unit(dates, currency, rates)))
     values = [*fund_values.values(), *cash_values.values()]
 
     levels_by_series = {
@@ -244,6 +242,11 @@ def _next_month(month: date) -> date:
     return (month + timedelta(days=31)).replace(day=1)
 
 
+def _has_rates(currency: str, rates: Sequence[FxRate]) -> bool:
+    """Whether `currency` can be converted to CZK: it is CZK, or some of its rates are stored."""
+    return currency == CZK or any(r.currency == currency for r in rates)
+
+
 def _czk_per_unit(dates: Sequence[date], currency: str, rates: Sequence[FxRate]) -> tuple[Decimal | None, ...]:
     """The last known CZK rate of `currency` on or before each day; 1 for CZK."""
     if currency == CZK:
@@ -251,9 +254,11 @@ def _czk_per_unit(dates: Sequence[date], currency: str, rates: Sequence[FxRate])
     return _last_known(dates, [(r.day, r.czk_per_unit) for r in rates if r.currency == currency])
 
 
-def _zero_when_not_held(units_held: Sequence[Decimal], values: Sequence[Decimal | None]) -> tuple[Decimal | None, ...]:
-    """`values` on the days units are held, else 0: nothing held is worth nothing, even before a price is known."""
-    return tuple(value if units else Decimal(0) for units, value in zip(units_held, values, strict=True))
+def _zero_when_not_held(held: Sequence[Decimal], values: Sequence[Decimal | None]) -> tuple[Decimal | None, ...]:
+    """`values` on the days some units or Cash are held, else 0: nothing held is worth nothing, even before a price or
+    rate is known.
+    """
+    return tuple(value if amount else Decimal(0) for amount, value in zip(held, values, strict=True))
 
 
 def _last_known(dates: Sequence[date], points: Sequence[tuple[date, Decimal]]) -> tuple[Decimal | None, ...]:

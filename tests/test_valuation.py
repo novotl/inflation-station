@@ -542,7 +542,7 @@ def test_portfolio_value_is_the_funds_plus_the_cash_so_fees_reduce_it() -> None:
     assert t.portfolio_value == (Decimal(520), Decimal(495))
 
 
-def test_a_negative_cash_balance_is_valued_as_negative() -> None:
+def test_negative_cash_is_valued_as_negative() -> None:
     t = timeline(
         [],
         ledger=[

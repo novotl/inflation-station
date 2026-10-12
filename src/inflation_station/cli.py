@@ -8,7 +8,7 @@ from inflation_station.chart import write_chart
 from inflation_station.errors import InflationStationError
 from inflation_station.freshness import out_of_date
 from inflation_station.imports import read_files
-from inflation_station.ledger import first_days
+from inflation_station.ledger import first_cash_days
 from inflation_station.price_check import price_warnings
 from inflation_station.price_index import CSU_CPI, EUROSTAT_HICP, NAMES
 from inflation_station.purchase import first_trade_dates, fund_names
@@ -82,7 +82,7 @@ def fetch_fx(data_dir: Path) -> None:
     try:
         purchases, ledger = _stored_purchases_and_ledger(data_dir, "to fetch rates for")
         first_held = first_trade_dates(purchases)
-        for currency, day in first_days(ledger).items():
+        for currency, day in first_cash_days(ledger).items():
             first_held[currency] = min(day, first_held.get(currency, day))
         first_held.pop(CZK, None)
         if not first_held:
