@@ -1,0 +1,19 @@
+Datum;Název;Typ;Symbol;ISIN;Kusy / Pozice;Popis;Cena;Hodnota;Měna;Srážková daň;Hrubá výše dividendy
+03.05.2021;Moje portfolio;Vklad z bankovního účtu;;;;;;5 000,00;CZK;;
+15.04.2021;Moje portfolio;Forex nákup – CZK/EUR;;;;CZK/EUR;;546,00;CZK;;
+15.04.2021;Moje portfolio;Forex prodej – EUR/CZK;;;;EUR/CZK;;-21,00;EUR;;
+15.04.2021;Moje portfolio;Prodej – ZPRS GY – 0,2500 kusů (84,00 € za kus);ZPRS GY;IE00BCBJG560;0,2500;;84,0000;21,00;EUR;;
+01.04.2021;Moje portfolio;Poplatek – březen - 2021;;;;březen - 2021;;-25,00;CZK;;
+18.03.2021;Moje portfolio;Forex prodej – 17.3.2021 Swap USDCZK_Roll;;;;17.3.2021 Swap USDCZK_Roll;;-1 105,00;CZK;;
+18.03.2021;Moje portfolio;Forex nákup – 17.3.2021 Swap USDCZK_Roll;;;;17.3.2021 Swap USDCZK_Roll;;50,00;USD;;
+17.03.2021;Moje portfolio;Forex nákup – 17.3.2021 Swap USDCZK_Roll;;;;17.3.2021 Swap USDCZK_Roll;;1 100,00;CZK;;
+17.03.2021;Moje portfolio;Forex prodej – 17.3.2021 Swap USDCZK_Roll;;;;17.3.2021 Swap USDCZK_Roll;;-50,00;USD;;
+03.03.2021;Moje portfolio;Nákup – CSPX LN – 0,2500 kusů (400,00 $ za kus);CSPX LN;IE00B5BMR087;0,2500;;400,0000;-100,00;USD;;
+03.03.2021;Moje portfolio;Nákup – ZPRS GY – 0,5000 kusů (80,00 € za kus);ZPRS GY;IE00BCBJG560;0,5000;;80,0000;-40,00;EUR;;
+03.03.2021;Moje portfolio;Nákup – ZPRS GY – 0,5000 kusů (80,00 € za kus);ZPRS GY;IE00BCBJG560;0,5000;;80,0000;-40,00;EUR;;
+03.03.2021;Moje portfolio;Nákup – SXR7 GY – 1,0000 kusů (120,00 € za kus);SXR7 GY;IE00B53QG562;1,0000;;120,0000;-120,00;EUR;;
+02.03.2021;Moje portfolio;Forex nákup – USD/CZK;;;;USD/CZK;;100,00;USD;;
+02.03.2021;Moje portfolio;Forex prodej – CZK/USD;;;;CZK/USD;;-2 200,00;CZK;;
+02.03.2021;Moje portfolio;Forex nákup – EUR/CZK;;;;EUR/CZK;;200,00;EUR;;
+02.03.2021;Moje portfolio;Forex prodej – CZK/EUR;;;;CZK/EUR;;-5 200,00;CZK;;
+01.03.2021;Moje portfolio;Vklad z bankovního účtu;;;;;;10 000,00;CZK;;

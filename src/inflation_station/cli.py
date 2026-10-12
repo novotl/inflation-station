@@ -7,7 +7,7 @@ from inflation_station import clock, cnb, conseq, csu, eurostat
 from inflation_station.chart import write_chart
 from inflation_station.errors import InflationStationError
 from inflation_station.freshness import out_of_date
-from inflation_station.imports import read_purchases
+from inflation_station.imports import read_files
 from inflation_station.price_check import price_warnings
 from inflation_station.price_index import CSU_CPI, EUROSTAT_HICP, NAMES
 from inflation_station.purchase import first_trade_dates, fund_names
@@ -16,6 +16,7 @@ from inflation_station.store import Store, database_exists
 from inflation_station.valuation import CZK, NO_PRICES, Timeline, no_rates, timeline
 
 if TYPE_CHECKING:
+    from inflation_station.ledger import LedgerEntry
     from inflation_station.purchase import Purchase
 
 
@@ -34,16 +35,21 @@ def main(ctx: click.Context, data_dir: Path | None) -> None:
 @click.argument("files", nargs=-1, required=True, type=click.Path(dir_okay=False, path_type=Path))
 @click.pass_obj
 def import_(data_dir: Path, files: tuple[Path, ...]) -> None:
-    """Import J&T transaction exports (CSV) and INVESTIKA statements (PDF, a cash and a holdings one per contract).
+    """Import J&T and Portu exports (CSV) and INVESTIKA statements (PDF, a cash and a holdings one per contract).
 
     Each file's format is recognised from its content. If any file fails, nothing is imported.
     """
     try:
-        purchases = read_purchases(files)
-        result = Store(data_dir).add_purchases(purchases)
+        imported = read_files(files)
+        store = Store(data_dir)
+        purchases = store.add_purchases(imported.purchases)
+        ledger = store.add_ledger_entries(imported.ledger)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
-    click.echo(f"{result.added} Purchases added, {result.already_present} already present.")
+    if imported.purchases or not imported.ledger:
+        click.echo(f"{purchases.added} Purchases added, {purchases.already_present} already present.")
+    if imported.ledger:
+        click.echo(f"{ledger.added} ledger entries added, {ledger.already_present} already present.")
 
 
 @main.command("fetch-prices")
@@ -120,13 +126,13 @@ def fetch_cpi(data_dir: Path) -> None:
 def chart(data_dir: Path) -> None:
     """Write an interactive HTML chart of the portfolio to the data directory."""
     try:
-        purchases = _stored_purchases(data_dir, "to chart")
+        purchases, ledger = _stored_purchases_and_ledger(data_dir)
         store = Store(data_dir)
         prices = store.fund_prices()
         rates = store.fx_rates()
         index_levels = store.index_levels()
         today = clock.today()
-        t = timeline(purchases, prices=prices, rates=rates, index_levels=index_levels, today=today)
+        t = timeline(purchases, ledger=ledger, prices=prices, rates=rates, index_levels=index_levels, today=today)
         # Only warnings, on stderr and on the page: the chart is still right up to each series' last point.
         warnings = out_of_date(
             prices=prices, rates=rates, index_levels=index_levels, fund_names=t.fund_names, today=today
@@ -147,6 +153,16 @@ def _stored_purchases(data_dir: Path, purpose: str) -> list[Purchase]:
         msg = f"no Purchases {purpose} yet; import first: inflation-station import <file>..."
         raise InflationStationError(msg)
     return purchases
+
+
+def _stored_purchases_and_ledger(data_dir: Path) -> tuple[list[Purchase], list[LedgerEntry]]:
+    """The stored Purchases and ledger entries; raises if there are neither. Only reads, like `_stored_purchases`."""
+    store = Store(data_dir) if database_exists(data_dir) else None
+    purchases, ledger = (store.purchases(), store.ledger()) if store else ([], [])
+    if not purchases and not ledger:
+        msg = "no Purchases or Deposits to chart yet; import first: inflation-station import <file>..."
+        raise InflationStationError(msg)
+    return purchases, ledger
 
 
 def _report_not_valued(t: Timeline, price_currencies: set[str]) -> None:

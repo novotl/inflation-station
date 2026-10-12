@@ -180,7 +180,7 @@ def test_chart_with_an_empty_database_fails_with_a_readable_message(tmp_path: Pa
     assert run("--data-dir", tmp_path, "chart") == (
         1,
         "",
-        "Error: no Purchases to chart yet; import first: inflation-station import <file>...\n",
+        "Error: no Purchases or Deposits to chart yet; import first: inflation-station import <file>...\n",
     )
     assert list(tmp_path.iterdir()) == []  # neither a chart nor a database was created
 

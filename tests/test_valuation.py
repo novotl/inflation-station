@@ -4,13 +4,15 @@ from decimal import Decimal
 
 from inflation_station.fund_price import FundPrice
 from inflation_station.fx_rate import FxRate
+from inflation_station.ledger import BUY, DEPOSIT, FEE, FOREX_BUY, FOREX_SELL, SELL, LedgerEntry
 from inflation_station.price_index import CSU_CPI, IndexLevel
 from inflation_station.purchase import Purchase
-from inflation_station.valuation import timeline
+from inflation_station.valuation import NO_PRICES, timeline
 
 CZK_FUND = "LU1756523376"
 OTHER_CZK_FUND = "CZ0008473808"
 EUR_FUND = "LU0260870158"
+ETF = "IE00B53QG562"
 
 
 def purchase(trade_date: date, gross_czk: str, isin: str = CZK_FUND, units: str = "1") -> Purchase:
@@ -397,3 +399,106 @@ def test_funds_with_prices_are_priced_in_the_currencies_of_their_prices_valued_o
 
     # The first fund was bought in CZK but is priced in EUR, which has no rates.
     assert t.priced_in == {CZK_FUND: "EUR", EUR_FUND: "CZK, EUR", OTHER_CZK_FUND: "CZK"}
+
+
+def entry(day: date, kind: str, amount: str, currency: str = "CZK") -> LedgerEntry:
+    """A ledger entry that moves only Cash."""
+    return LedgerEntry(
+        platform="portu",
+        account_id="Moje portfolio",
+        source_row_id=f"{day};{kind};;{amount};{currency};1",
+        day=day,
+        kind=kind,
+        isin="",
+        fund_name="",
+        units=Decimal(0),
+        unit_price=None,
+        amount=Decimal(amount),
+        currency=currency,
+    )
+
+
+def trade(day: date, units: str, amount: str) -> LedgerEntry:
+    """A buy (units up) or sell (units down) of the EUR ETF."""
+    return replace(
+        entry(day, BUY if Decimal(units) > 0 else SELL, amount, currency="EUR"),
+        isin=ETF,
+        fund_name=f"ETF {ETF}",
+        units=Decimal(units),
+        unit_price=Decimal(100),
+    )
+
+
+def test_deposits_count_as_invested_alongside_purchases_and_fees_and_buys_do_not() -> None:
+    t = timeline(
+        [purchase(date(2021, 6, 14), "1000")],
+        ledger=[
+            entry(date(2021, 6, 13), DEPOSIT, "500"),
+            trade(date(2021, 6, 14), "0.04", "-4"),
+            entry(date(2021, 6, 15), FEE, "-10"),
+        ],
+        today=date(2021, 6, 15),
+    )
+
+    assert t.dates[0] == date(2021, 6, 13)
+    assert t.amount_invested == (Decimal(500), Decimal(1500), Decimal(1500))
+
+
+def test_the_hurdle_grows_each_deposit_from_its_date() -> None:
+    t = timeline(
+        [purchase(date(2021, 5, 1), "1000")],
+        ledger=[entry(date(2021, 6, 1), DEPOSIT, "500")],
+        index_levels=[
+            level(date(2021, 5, 1), "100"),
+            level(date(2021, 6, 1), "110"),
+            level(date(2021, 7, 1), "121"),
+            level(date(2021, 8, 1), "121"),
+        ],
+        today=date(2021, 7, 1),
+    )
+
+    hurdle = t.hurdles[CSU_CPI].values
+    deposited = t.dates.index(date(2021, 6, 1))
+    # Before 1 Jun only the Purchase counts, so the hurdle is the fund's own.
+    assert hurdle[:deposited] == t.fund_hurdles[CZK_FUND][CSU_CPI].values[:deposited]
+    assert hurdle[-1] == Decimal(1210) + Decimal(550)
+    # The fund's own hurdle grows only its Purchase.
+    assert t.fund_hurdles[CZK_FUND][CSU_CPI].values[-1] == Decimal(1210)
+
+
+def test_funds_held_in_a_managed_account_have_units_but_nothing_invested_in_them() -> None:
+    t = timeline(
+        [],
+        ledger=[
+            entry(date(2021, 6, 13), DEPOSIT, "500"),
+            trade(date(2021, 6, 13), "0.04", "-4"),
+            trade(date(2021, 6, 14), "-0.01", "1"),
+        ],
+        today=date(2021, 6, 14),
+    )
+
+    assert t.units_held == {ETF: (Decimal("0.04"), Decimal("0.03"))}
+    assert t.fund_amount_invested == {ETF: (Decimal(0), Decimal(0))}
+    assert t.fund_names == {ETF: f"ETF {ETF}"}
+    assert t.priced_in == {ETF: "EUR"}
+    assert t.not_valued == {ETF: NO_PRICES}
+
+
+def test_cash_is_every_ledger_entry_summed_by_currency() -> None:
+    t = timeline(
+        [purchase(date(2021, 6, 12), "1000")],
+        ledger=[
+            entry(date(2021, 6, 13), DEPOSIT, "500"),
+            entry(date(2021, 6, 13), FOREX_SELL, "-400"),
+            entry(date(2021, 6, 13), FOREX_BUY, "16", currency="EUR"),
+            trade(date(2021, 6, 14), "0.16", "-16"),
+            entry(date(2021, 6, 14), FOREX_SELL, "-1", currency="EUR"),
+            entry(date(2021, 6, 15), FOREX_BUY, "1", currency="EUR"),
+        ],
+        today=date(2021, 6, 15),
+    )
+
+    assert t.cash == {
+        "CZK": (Decimal(0), Decimal(100), Decimal(100), Decimal(100)),
+        "EUR": (Decimal(0), Decimal(16), Decimal(-1), Decimal(0)),
+    }
