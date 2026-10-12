@@ -1,4 +1,3 @@
-import json
 import re
 import zipfile
 from pathlib import Path
@@ -6,6 +5,7 @@ from unittest.mock import ANY
 
 import pytest
 from click.testing import CliRunner
+from test_chart import composition, page
 
 from inflation_station import conseq
 from inflation_station.cli import main
@@ -36,14 +36,6 @@ def report(*, first_fetch: bool) -> str:
         f"{fund}: {n if first_fetch else 0} prices added, {0 if first_fetch else n} already present.\n"
         for fund, n in RECORDED_PRICES.items()
     )
-
-
-def traces(chart: Path) -> dict[str, dict]:
-    """The chart's plotly traces by name, read back from the JSON in the written HTML."""
-    html = chart.read_text(encoding="utf-8")
-    after_div_id = html.split("Plotly.newPlot(", 1)[1].split(",", 1)[1].lstrip()
-    data, _ = json.JSONDecoder().raw_decode(after_div_id)
-    return {trace["name"]: trace for trace in data}
 
 
 def test_fetch_prices_stores_prices_for_every_purchased_fund(tmp_path: Path) -> None:
@@ -104,7 +96,7 @@ def test_refetching_keeps_stored_prices_when_conseq_changes_them(tmp_path: Path,
     run("--data-dir", tmp_path, "chart")
 
     # 79.90 units at the stored price of 1 463 CZK on 1 Jul 2021, not at Conseq's changed price of 1.
-    assert traces(tmp_path / "chart.html")["FF - World Fund A-ACC-CZK"]["y"][-1] == pytest.approx(79.90 * 1463)
+    assert composition(tmp_path)["FF - World Fund A-ACC-CZK"]["y"][-1] == pytest.approx(79.90 * 1463)
 
 
 def with_every_price_set_to(price: str, xlsx: Path, changed: Path) -> Path:
@@ -194,7 +186,7 @@ def test_the_warning_changes_no_data(tmp_path: Path) -> None:
         run("--data-dir", data_dir, "chart")
 
     # Valued at Conseq's prices either way, and no price stored differently.
-    assert traces(warned / "chart.html") == traces(plain / "chart.html")
+    assert page(warned) == page(plain)
     assert run("--data-dir", warned, "fetch-prices") == (0, report(first_fetch=False), ANY)
 
 
