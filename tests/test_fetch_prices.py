@@ -100,6 +100,22 @@ def test_a_fund_listed_by_both_conseq_and_yahoo_fails_naming_it(
     )
 
 
+def test_an_untraded_isin_listed_by_both_conseq_and_yahoo_fails_naming_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # FF America (LU0979392767) has a Conseq page but is not in the export.
+    tickers = tmp_path / "yahoo_funds.toml"
+    tickers.write_text(yahoo.TICKERS.read_text(encoding="utf-8") + 'LU0979392767 = "FFA.DE"\n', encoding="utf-8")
+    monkeypatch.setattr(yahoo, "TICKERS", tickers)
+    run("--data-dir", tmp_path, "import", EXPORT)
+
+    assert run("--data-dir", tmp_path, "fetch-prices") == (
+        1,
+        "",
+        f"Error: LU0979392767 is listed in both {conseq.FUND_PAGES} and {tickers}; remove it from one of them\n",
+    )
+
+
 def test_a_fund_page_showing_another_isin_fails_naming_both(tmp_path: Path, recorded: dict[str, Path]) -> None:
     recorded[FF_WORLD_PAGE] = FIXTURES / "conseq" / "ff-america-fund-hedged-czk.html"
     run("--data-dir", tmp_path, "import", EXPORT)

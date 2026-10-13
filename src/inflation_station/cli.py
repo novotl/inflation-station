@@ -68,8 +68,7 @@ def fetch_prices(data_dir: Path) -> None:
             click.echo(
                 f"{funds[isin]} ({isin}): {result.added} prices added, {result.already_present} already present."
             )
-        published_by = {isin: source.name for isin, source in sources.items()}
-        warnings = price_warnings(purchases, ledger, store.fund_prices(), published_by)
+        warnings = price_warnings(purchases, ledger, store.fund_prices(), fund_names=funds, sources=sources)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
     for warning in warnings:
@@ -158,10 +157,8 @@ def _stored_purchases(data_dir: Path, purpose: str) -> list[Purchase]:
 
 
 def _stored_buys_and_sells(data_dir: Path) -> tuple[list[Purchase], list[LedgerEntry]]:
-    """The stored Purchases and ledger entries; raises if no fund was bought in either. Only reads, like
-    `_stored_purchases`."""
-    store = Store(data_dir) if database_exists(data_dir) else None
-    purchases, ledger = (store.purchases(), store.ledger()) if store else ([], [])
+    """The stored Purchases and ledger entries; raises if no fund was bought in either."""
+    purchases, ledger = _read_purchases_and_ledger(data_dir)
     if not purchases and not any(e.isin for e in ledger):
         msg = (
             "no Purchases or Managed Account buys to fetch prices for yet; import first: "
@@ -172,13 +169,20 @@ def _stored_buys_and_sells(data_dir: Path) -> tuple[list[Purchase], list[LedgerE
 
 
 def _stored_purchases_and_ledger(data_dir: Path) -> tuple[list[Purchase], list[LedgerEntry]]:
-    """The stored Purchases and ledger entries; raises if there are neither. Only reads, like `_stored_purchases`."""
-    store = Store(data_dir) if database_exists(data_dir) else None
-    purchases, ledger = (store.purchases(), store.ledger()) if store else ([], [])
+    """The stored Purchases and ledger entries; raises if there are neither."""
+    purchases, ledger = _read_purchases_and_ledger(data_dir)
     if not purchases and not ledger:
         msg = "no Purchases or Deposits to chart yet; import first: inflation-station import <file>..."
         raise InflationStationError(msg)
     return purchases, ledger
+
+
+def _read_purchases_and_ledger(data_dir: Path) -> tuple[list[Purchase], list[LedgerEntry]]:
+    """The stored Purchases and ledger entries, possibly none. Only reads, like `_stored_purchases`."""
+    if not database_exists(data_dir):
+        return [], []
+    store = Store(data_dir)
+    return store.purchases(), store.ledger()
 
 
 def _report_not_valued(t: Timeline, price_currencies: set[str]) -> None:

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class PriceSource:
-    """One fund's prices: who publishes them, and how to download them all."""
+    """One fund's price source: its name, and how to download all its prices."""
 
     name: str
     fetch: Callable[[], list[FundPrice]]
@@ -23,10 +23,10 @@ class PriceSource:
 def price_sources(funds: Mapping[str, str]) -> dict[str, PriceSource]:
     """The price source of each fund in `funds` (ISIN -> fund name), from the hand-edited mappings.
 
-    Raises naming every fund in neither mapping, or in both.
+    Raises naming every fund in neither mapping, and every ISIN in both, traded or not.
     """
     pages, tickers = conseq.fund_pages(), yahoo.tickers()
-    in_both = [isin for isin in funds if isin in pages and isin in tickers]
+    in_both = sorted(pages.keys() & tickers.keys())
     if in_both:
         msg = (
             f"{_names(funds, in_both)} is listed in both {conseq.FUND_PAGES} and {yahoo.TICKERS}; "
@@ -54,4 +54,5 @@ def _source(isin: str, pages: Mapping[str, str], tickers: Mapping[str, str]) -> 
 
 
 def _names(funds: Mapping[str, str], isins: list[str]) -> str:
-    return ", ".join(f"{funds[isin]} ({isin})" for isin in isins)
+    """Each ISIN with its fund's name, or bare if it was never purchased or held."""
+    return ", ".join(f"{funds[isin]} ({isin})" if isin in funds else isin for isin in isins)

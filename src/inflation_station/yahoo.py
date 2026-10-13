@@ -13,9 +13,9 @@ from inflation_station.fund_price import FundPrice
 
 # The hand-edited mapping from ISIN to Yahoo Finance ticker.
 TICKERS = Path(__file__).parent / "yahoo_funds.toml"
-# Every daily point from the listing's first day up to `period2`: `range=max` would thin out to weekly or monthly ones.
-CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{}?period1=0&period2={}&interval=1d"
 DAILY = "1d"
+# Every daily point from the listing's first day up to `period2`: `range=max` would thin out to weekly or monthly ones.
+CHART = f"https://query1.finance.yahoo.com/v8/finance/chart/{{}}?period1=0&period2={{}}&interval={DAILY}"
 # Closes are 32-bit floats (143.72 comes as 143.72000122070312), good to about 7 significant digits.
 _SIGNIFICANT_DIGITS = 7
 

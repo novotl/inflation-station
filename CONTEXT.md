@@ -32,6 +32,10 @@ _Avoid_: position
 Money in a Managed Account not yet in funds, in each currency it is held in. It is part of the Account's value; fees are paid from it.
 _Avoid_: balance
 
+**Price source**:
+Who publishes a fund's daily prices, which `fetch-prices` downloads and the price check compares against: Conseq for the funds it sells, Yahoo Finance for exchange-traded ones. Each fund has exactly one, set in a hand-edited mapping file.
+_Avoid_: publisher, price provider
+
 **Value**:
 What Holdings and Cash are worth in CZK on a day, at the last known fund price and ČNB rate.
 
