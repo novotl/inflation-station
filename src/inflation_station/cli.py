@@ -8,6 +8,7 @@ from inflation_station.chart import write_chart
 from inflation_station.errors import InflationStationError
 from inflation_station.freshness import out_of_date
 from inflation_station.imports import read_files
+from inflation_station.ledger import first_cash_days
 from inflation_station.price_check import price_warnings
 from inflation_station.price_index import CSU_CPI, EUROSTAT_HICP, NAMES
 from inflation_station.price_sources import price_sources
@@ -78,15 +79,18 @@ def fetch_prices(data_dir: Path) -> None:
 @main.command("fetch-fx")
 @click.pass_obj
 def fetch_fx(data_dir: Path) -> None:
-    """Download daily CZK rates from ČNB for every currency a purchased fund is priced in."""
+    """Download daily CZK rates from ČNB for every currency a purchased fund is priced in or Cash is held in."""
     try:
-        first_held = first_trade_dates(_stored_purchases(data_dir, "to fetch rates for"))
+        purchases, ledger = _stored_purchases_and_ledger(data_dir, "to fetch rates for")
+        first_held = first_trade_dates(purchases)
+        for currency, day in first_cash_days(ledger).items():
+            first_held[currency] = min(day, first_held.get(currency, day))
         first_held.pop(CZK, None)
         if not first_held:
-            click.echo(f"Every Purchase is priced in {CZK}; no rates to fetch.")
+            click.echo(f"Every Purchase and all Cash is in {CZK}; no rates to fetch.")
             return
         store = Store(data_dir)
-        for currency, first in first_held.items():
+        for currency, first in sorted(first_held.items()):
             stored = [r.day for r in store.fx_rates() if r.currency == currency]
             added = already_present = 0
             for month in cnb.months_to_fetch(first, clock.today(), stored):
@@ -127,7 +131,7 @@ def fetch_cpi(data_dir: Path) -> None:
 def chart(data_dir: Path) -> None:
     """Write an interactive HTML chart of the portfolio to the data directory."""
     try:
-        purchases, ledger = _stored_purchases_and_ledger(data_dir)
+        purchases, ledger = _stored_purchases_and_ledger(data_dir, "to chart")
         store = Store(data_dir)
         prices = store.fund_prices()
         rates = store.fx_rates()
@@ -141,19 +145,10 @@ def chart(data_dir: Path) -> None:
         path = write_chart(t, data_dir, warnings=warnings)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
-    _report_not_valued(t, {p.currency for p in prices})
+    _report_not_valued(t, {p.currency for p in prices} | set(t.cash))
     for warning in warnings:
         click.echo(f"Out of date: {warning}", err=True)
     click.echo(f"Chart written to {path}")
-
-
-def _stored_purchases(data_dir: Path, purpose: str) -> list[Purchase]:
-    """The stored Purchases; raises if there are none."""
-    purchases, _ = _read_purchases_and_ledger(data_dir)
-    if not purchases:
-        msg = f"no Purchases {purpose} yet; import first: inflation-station import <file>..."
-        raise InflationStationError(msg)
-    return purchases
 
 
 def _stored_buys_and_sells(data_dir: Path) -> tuple[list[Purchase], list[LedgerEntry]]:
@@ -168,11 +163,11 @@ def _stored_buys_and_sells(data_dir: Path) -> tuple[list[Purchase], list[LedgerE
     return purchases, ledger
 
 
-def _stored_purchases_and_ledger(data_dir: Path) -> tuple[list[Purchase], list[LedgerEntry]]:
+def _stored_purchases_and_ledger(data_dir: Path, purpose: str) -> tuple[list[Purchase], list[LedgerEntry]]:
     """The stored Purchases and ledger entries; raises if there are neither."""
     purchases, ledger = _read_purchases_and_ledger(data_dir)
     if not purchases and not ledger:
-        msg = "no Purchases or Deposits to chart yet; import first: inflation-station import <file>..."
+        msg = f"no Purchases or Deposits {purpose} yet; import first: inflation-station import <file>..."
         raise InflationStationError(msg)
     return purchases, ledger
 
@@ -186,18 +181,21 @@ def _read_purchases_and_ledger(data_dir: Path) -> tuple[list[Purchase], list[Led
     return store.purchases(), store.ledger()
 
 
-def _report_not_valued(t: Timeline, price_currencies: set[str]) -> None:
-    """Name the funds left out of the chart, grouped by why, on stderr."""
-    rate_reasons = {no_rates(currency) for currency in price_currencies}
+def _report_not_valued(t: Timeline, currencies: set[str]) -> None:
+    """Name the funds and Cash left out of the chart, grouped by why, on stderr."""
+    rate_reasons = {no_rates(currency) for currency in currencies}
     by_reason: dict[str, list[str]] = {}
     for isin, reason in t.not_valued.items():
         by_reason.setdefault(reason, []).append(f"{t.fund_names[isin]} ({isin})")
-    for reason, funds in by_reason.items():
-        # A fund is left out for missing prices, missing rates, or prices in more than one currency.
+    for currency, reason in t.cash_not_valued.items():
+        by_reason.setdefault(reason, []).append(f"{currency} Cash")
+    for reason, left_out in by_reason.items():
+        # A fund is left out for missing prices, missing rates, or prices in more than one currency; Cash only for
+        # missing rates.
         if reason == NO_PRICES:
             hint = "; run inflation-station fetch-prices"
         elif reason in rate_reasons:
             hint = "; run inflation-station fetch-fx"
         else:
             hint = ""
-        click.echo(f"Not valued ({reason}{hint}): {', '.join(funds)}", err=True)
+        click.echo(f"Not valued ({reason}{hint}): {', '.join(left_out)}", err=True)
