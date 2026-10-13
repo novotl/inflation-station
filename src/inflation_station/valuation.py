@@ -151,8 +151,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
         dates=dates,
         amount_invested=_running_total(dates, invested),
         fund_amount_invested={isin: _amount_invested(dates, bought) for isin, bought in purchased.items()},
-        # A fund's name on a Platform where you pick the funds wins over its ticker in a Managed Account.
-        fund_names=dict(sorted((held_fund_names(ledger) | fund_names(purchases)).items())),
+        fund_names=all_fund_names(purchases, ledger),
         units_held=units_held,
         fund_values=fund_values,
         fund_currency_values=fund_currency_values,
@@ -173,6 +172,12 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
             for currency in sorted({e.currency for e in ledger})
         },
     )
+
+
+def all_fund_names(purchases: Iterable[Purchase], ledger: Iterable[LedgerEntry]) -> dict[str, str]:
+    """The name of every fund purchased or held, by ISIN, sorted by ISIN."""
+    # A fund's name on a Platform where you pick the funds wins over its ticker in a Managed Account.
+    return dict(sorted((held_fund_names(ledger) | fund_names(purchases)).items()))
 
 
 def _amount_invested(dates: Sequence[date], purchases: Iterable[Purchase]) -> tuple[Decimal, ...]:
