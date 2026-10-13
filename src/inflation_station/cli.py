@@ -189,7 +189,7 @@ def _report_not_valued(t: Timeline, currencies: set[str]) -> None:
         by_reason.setdefault(reason, []).append(f"{t.fund_names[isin]} ({isin})")
     for currency, reason in t.cash_not_valued.items():
         by_reason.setdefault(reason, []).append(f"{currency} Cash")
-    for reason, funds in by_reason.items():
+    for reason, left_out in by_reason.items():
         # A fund is left out for missing prices, missing rates, or prices in more than one currency; Cash only for
         # missing rates.
         if reason == NO_PRICES:
@@ -198,4 +198,4 @@ def _report_not_valued(t: Timeline, currencies: set[str]) -> None:
             hint = "; run inflation-station fetch-fx"
         else:
             hint = ""
-        click.echo(f"Not valued ({reason}{hint}): {', '.join(funds)}", err=True)
+        click.echo(f"Not valued ({reason}{hint}): {', '.join(left_out)}", err=True)

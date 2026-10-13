@@ -215,15 +215,31 @@ def test_fetch_fx_fetches_the_currencies_cash_is_held_in(tmp_path: Path) -> None
 
 
 def test_the_chart_values_cash_and_stacks_it_under_the_funds(tmp_path: Path) -> None:
-    run("--data-dir", tmp_path, "import", eur_cash_export(tmp_path))
+    # Half an SXR7 at 3 May's close, paid from the 100 EUR.
+    export = write(
+        tmp_path / "eur_and_sxr7.csv",
+        [
+            *rows(eur_cash_export(tmp_path)),
+            f"03.05.2021;{ACCOUNT};Nákup{portu.TYPE_SEPARATOR}SXR7 GY;SXR7 GY;{SXR7};0,5000;;139,3400;-69,67;EUR;;\n",
+        ],
+    )
+    run("--data-dir", tmp_path, "import", export)
+    run("--data-dir", tmp_path, "fetch-prices")
     run("--data-dir", tmp_path, "fetch-fx")
 
     assert run("--data-dir", tmp_path, "chart")[::2] == (0, "")  # nothing left out
-    # On 1 Jul 2021, at ČNB's 25.505 CZK per EUR.
-    assert page(tmp_path)["portfolio"]["value"] == pytest.approx(2400 + 100 * 25.505)
+    # On 1 Jul 2021, at ČNB's 25.505 CZK per EUR and SXR7's 30 Jun close of 143.72 EUR.
+    cash = 2400 + (100 - 69.67) * 25.505
+    sxr7 = 0.5 * 143.72 * 25.505
+    assert page(tmp_path)["portfolio"]["value"] == pytest.approx(cash + sxr7)
     stacked = page(tmp_path)["portfolio"]["composition"]
-    assert [(t["name"], t.get("stackgroup")) for t in stacked] == [("Cash", "value"), ("Amount invested", None)]
-    assert stacked[0]["y"][-1] == pytest.approx(2400 + 100 * 25.505)
+    assert [(t["name"], t.get("stackgroup")) for t in stacked] == [
+        ("Cash", "value"),
+        ("SXR7 GY", "value"),
+        ("Amount invested", None),
+    ]
+    assert stacked[0]["y"][-1] == pytest.approx(cash)
+    assert stacked[1]["y"][-1] == pytest.approx(sxr7)
 
 
 def test_fetch_fx_with_only_czk_cash_fetches_nothing(tmp_path: Path, recorded: dict[str, Path]) -> None:
