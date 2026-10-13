@@ -1,14 +1,21 @@
 import json
 import re
 import socket
+from dataclasses import replace
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
 from inflation_station import clock
+from inflation_station.chart import write_chart
 from inflation_station.cli import main
+from inflation_station.fund_price import FundPrice
+from inflation_station.ledger import BUY, DEPOSIT, LedgerEntry
+from inflation_station.purchase import Purchase
+from inflation_station.valuation import timeline
 
 EXPORT = Path(__file__).parent / "fixtures" / "jt_export.csv"
 # ČSÚ's May 2021 change, 0.2 %, which by "today", 1 Jul 2021, also estimates June and July.
@@ -448,3 +455,162 @@ def test_without_prices_a_fund_is_priced_in_the_currency_it_was_bought_in(tmp_pa
 
     amundi = next(f for f in page(tmp_path)["funds"] if f["isin"] == "LU1883872332")
     assert (amundi["pricedIn"], amundi["notValued"]) == ("EUR", "no prices stored")
+
+
+PORTU_EXPORT = Path(__file__).parent / "fixtures" / "portu_export.csv"
+
+
+def test_each_account_has_a_section_headed_by_its_platform_and_name_largest_value_first(tmp_path: Path) -> None:
+    fetch_everything(tmp_path)
+    run("--data-dir", tmp_path, "import", PORTU_EXPORT)
+    run("--data-dir", tmp_path, "chart")
+
+    jt, portu = page(tmp_path)["accounts"]
+    assert (jt["name"], jt["managed"], portu["name"], portu["managed"]) == (
+        "J&T Banka · 900000001",
+        False,
+        "Portu · Moje portfolio",
+        True,
+    )
+    assert jt["value"] == pytest.approx(FF_WORLD + JT_MONEY + FRANKLIN + AMUNDI)
+    assert jt["invested"] == 235000  # noqa: PLR2004 - the fixture's seven Purchases
+    assert jt["benchmarkHurdle"] == pytest.approx(hurdle_on_1_jul(CSU_MAY))
+    assert [h["name"] for h in jt["hurdles"]] == ["ČSÚ CPI", "Eurostat HICP"]
+    # A Managed Account's money invested is its two Deposits. Its funds have no prices, so its value is its Cash: 8 116
+    # CZK, and no EUR.
+    assert (portu["invested"], portu["value"], portu["notValued"]) == (15000, 8116, None)
+    # It names what its value leaves out: its funds, and its Cash in currencies without rates.
+    assert portu["leftOut"] == [
+        "SXR7 GY (no prices stored)",
+        "CSPX LN (no prices stored)",
+        "ZPRS GY (no prices stored)",
+        "USD Cash (no USD rates stored)",
+    ]
+    assert jt["leftOut"] == []
+    # Styled like the overall chart: value, amount invested and both hurdles, each in its role.
+    assert {name: line["meta"] for name, line in by_name(jt["chart"]).items()} == {
+        "Value": "value",
+        "Amount invested": "invested",
+        "Inflation hurdle (ČSÚ CPI)": "inflation",
+        "Inflation hurdle (ČSÚ CPI, estimated)": "inflation",
+        "Inflation hurdle (Eurostat HICP)": "inflation",
+        "Inflation hurdle (Eurostat HICP, estimated)": "inflation",
+    }
+    assert [t["name"] for t in jt["relative"]] == ["real", "nominal"]
+
+
+def test_each_fund_section_is_a_holding_naming_its_account(tmp_path: Path) -> None:
+    fetch_everything(tmp_path)
+    run("--data-dir", tmp_path, "chart")
+
+    assert {f["account"] for f in page(tmp_path)["funds"]} == {"J&T Banka · 900000001"}
+    assert len({f["key"] for f in page(tmp_path)["funds"]}) == 4  # noqa: PLR2004 - the fixture's funds
+
+
+def test_holdings_in_a_managed_account_show_units_but_no_amount_invested_or_hurdle(tmp_path: Path) -> None:
+    fetch_everything(tmp_path)
+    run("--data-dir", tmp_path, "import", PORTU_EXPORT)
+    run("--data-dir", tmp_path, "chart")
+
+    portu = [f for f in page(tmp_path)["funds"] if f["account"] == "Portu · Moje portfolio"]
+    assert [(f["isin"], f["units"], f["managed"]) for f in portu] == [
+        ("IE00B53QG562", "1", True),
+        ("IE00B5BMR087", "0.25", True),
+        ("IE00BCBJG560", "0.75", True),
+    ]
+    assert {(f["invested"], f["benchmarkHurdle"], f["notValued"]) for f in portu} == {(None, None, "no prices stored")}
+    assert all(f["chart"] == f["relative"] == [] for f in portu)
+
+
+def test_a_valued_holding_in_a_managed_account_charts_its_value_only(tmp_path: Path) -> None:
+    deposit = LedgerEntry(
+        "portu", "Moje portfolio", "1", date(2021, 6, 13), DEPOSIT, "", "", Decimal(0), None, Decimal(500), "CZK"
+    )
+    buy = replace(
+        deposit,
+        source_row_id="2",
+        kind=BUY,
+        isin="IE00B53QG562",
+        fund_name="SXR7 GY",
+        units=Decimal(2),
+        unit_price=Decimal(100),
+        amount=Decimal(-200),
+    )
+    t = timeline(
+        [],
+        ledger=[deposit, buy],
+        prices=[FundPrice(isin="IE00B53QG562", day=date(2021, 6, 13), price=Decimal(110), currency="CZK")],
+        today=date(2021, 6, 14),
+    )
+    write_chart(t, tmp_path)
+
+    (holding,) = page(tmp_path)["funds"]
+    assert [line["name"] for line in holding["chart"]] == ["Value"]
+    assert hover(holding["chart"][0], -1) == "220.00 CZK · 2 units"
+    # The Account's value is its Holding plus its Cash: 300 CZK left of the Deposit.
+    assert page(tmp_path)["accounts"][0]["value"] == 520  # noqa: PLR2004
+    assert page(tmp_path)["accounts"][0]["leftOut"] == []
+
+
+def ff_world(units: int) -> Purchase:
+    """A J&T Purchase of `units` FF World units at 10 CZK, in Account 900000001 on 13 Jun 2021."""
+    return Purchase(
+        platform="jt",
+        account_id="900000001",
+        source_row_id="1",
+        isin="LU1756523376",
+        fund_name="FF - World Fund A-ACC-CZK",
+        trade_date=date(2021, 6, 13),
+        units=Decimal(units),
+        unit_price=Decimal(10),
+        unit_price_currency="CZK",
+        gross_czk=Decimal(units * 10),
+        fee=Decimal(0),
+        fee_currency="CZK",
+    )
+
+
+def test_one_fund_in_two_accounts_is_two_holdings_each_naming_its_account(tmp_path: Path) -> None:
+    bought = ff_world(units=2)
+    t = timeline(
+        [bought, replace(bought, account_id="900000002", units=Decimal(3), gross_czk=Decimal(30))],
+        prices=[FundPrice(isin="LU1756523376", day=date(2021, 6, 13), price=Decimal(10), currency="CZK")],
+        today=date(2021, 6, 14),
+    )
+    write_chart(t, tmp_path)
+
+    funds = page(tmp_path)["funds"]
+    assert [(f["account"], f["value"], f["invested"]) for f in funds] == [
+        ("J&T Banka · 900000002", 30, 30),
+        ("J&T Banka · 900000001", 20, 20),
+    ]
+    assert len({f["key"] for f in funds}) == 2  # noqa: PLR2004 - one per Holding
+    assert set(composition(tmp_path)) == {
+        "FF - World Fund A-ACC-CZK (J&T Banka · 900000001)",
+        "FF - World Fund A-ACC-CZK (J&T Banka · 900000002)",
+        "Amount invested",
+    }
+
+
+def test_an_account_with_nothing_valued_says_whether_its_funds_or_its_cash_are_missing(tmp_path: Path) -> None:
+    usd = LedgerEntry(
+        "portu", "Cash only", "1", date(2021, 6, 13), DEPOSIT, "", "", Decimal(0), None, Decimal(100), "USD"
+    )
+    buy = replace(
+        usd,
+        account_id="Moje portfolio",
+        kind=BUY,
+        isin="IE00B5BMR087",
+        fund_name="CSPX LN",
+        units=Decimal(1),
+        unit_price=Decimal(100),
+        amount=Decimal(-100),
+    )
+    bought = ff_world(units=1)
+    write_chart(timeline([bought], ledger=[usd, buy], today=date(2021, 6, 13)), tmp_path)
+
+    assert {a["name"]: a["notValued"] for a in page(tmp_path)["accounts"]} == {
+        "J&T Banka · 900000001": "none of its funds valued",
+        "Portu · Cash only": "none of its Cash valued",
+        "Portu · Moje portfolio": "none of its funds or Cash valued",
+    }

@@ -10,7 +10,7 @@ from inflation_station import portu
 from inflation_station.cli import main
 from inflation_station.ledger import BUY, DEPOSIT, FEE, FOREX_BUY, FOREX_SELL, SELL
 from inflation_station.store import Store
-from inflation_station.valuation import NO_PRICES, timeline
+from inflation_station.valuation import NO_PRICES, Account, Holding, timeline
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPORT = FIXTURES / "portu_export.csv"
@@ -166,12 +166,13 @@ def test_cash_replays_to_the_exports_final_balances() -> None:
 def test_units_held_go_up_on_buys_and_down_on_sells() -> None:
     t = timeline([], ledger=portu.read_export(EXPORT), today=date(2021, 5, 3))
 
-    assert {isin: units[-1] for isin, units in t.units_held.items()} == {
+    assert {holding.isin: units[-1] for holding, units in t.units_held.items()} == {
         CSPX: Decimal("0.2500"),
         SXR7: Decimal("1.0000"),
         ZPRS: Decimal("0.7500"),
     }
-    assert t.units_held[ZPRS][t.dates.index(date(2021, 4, 14))] == Decimal("1.0000")
+    assert {holding.account for holding in t.units_held} == {Account("portu", ACCOUNT)}
+    assert t.units_held[Holding(Account("portu", ACCOUNT), ZPRS)][t.dates.index(date(2021, 4, 14))] == Decimal("1.0000")
 
 
 def test_the_deposits_are_the_amount_invested() -> None:
