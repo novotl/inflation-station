@@ -95,6 +95,9 @@ def _account_section(timeline: Timeline, account: Account, benchmark: str | None
     """An Account's figures on the last day and its chart, as the portfolio's."""
     series = timeline.accounts[account]
     hurdle = series.hurdles[benchmark] if benchmark else None
+    held = [h for h in timeline.units_held if h.account == account]
+    # With no value, nothing in it can be valued: each of its funds, and its Cash in every currency.
+    missing = (["funds"] if held else []) + (["Cash"] if series.cash_not_valued else [])
     return {
         "key": _key(account),
         "name": _account_name(account),
@@ -103,12 +106,12 @@ def _account_section(timeline: Timeline, account: Account, benchmark: str | None
         "invested": _last(series.amount_invested),
         "hurdles": [{"name": NAMES[s], "value": _last(h.values)} for s, h in series.hurdles.items()],
         "benchmarkHurdle": _last(hurdle.values) if hurdle else None,
-        "notValued": None if series.value is not None else "none of its funds valued",
+        "notValued": None if series.value is not None else f"none of its {' or '.join(missing)} valued",
         # What its value leaves out: its funds and its Cash in each currency that can't be valued, saying why.
         "leftOut": [
             f"{timeline.fund_names[h.isin]} ({timeline.not_valued[h.isin]})"
-            for h in timeline.units_held
-            if h.account == account and h not in timeline.holding_values
+            for h in held
+            if h not in timeline.holding_values
         ]
         + [f"{currency} Cash ({reason})" for currency, reason in series.cash_not_valued.items()],
         "chart": _account_chart(timeline, account),
@@ -130,7 +133,7 @@ def _holding_section(timeline: Timeline, holding: Holding, benchmark: str | None
         "isin": isin,
         "name": timeline.fund_names[isin],
         "account": _account_name(holding.account),
-        "managed": invested is None,
+        "managed": timeline.accounts[holding.account].managed,
         "pricedIn": timeline.priced_in[isin],
         "value": _last(timeline.holding_values.get(holding)),
         # Only for funds valued in a currency other than CZK.

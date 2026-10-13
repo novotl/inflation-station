@@ -67,13 +67,11 @@ class AccountTimeline:
     managed: bool
     # The gross CZK of its Purchases, or its Deposits, dated on or before each day.
     amount_invested: tuple[Decimal, ...]
-    # The sum of its Holdings' CZK values and its Cash in CZK, in every currency with rates; None when none of its
-    # Holdings can be valued.
+    # The sum of the CZK values of its Holdings and its Cash that can be valued, as `Timeline.portfolio_value`; None
+    # when none of them can be.
     value: tuple[Decimal | None, ...] | None
     # The inflation hurdle of its Purchases or Deposits, by price index series.
     hurdles: Mapping[str, Hurdle]
-    # Its Cash by currency, for every currency in its ledger, as `Timeline.cash`.
-    cash: Mapping[str, tuple[Decimal, ...]]
     # Why its Cash in each currency left out of `value` couldn't be valued, by currency.
     cash_not_valued: Mapping[str, str]
 
@@ -205,15 +203,13 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
     accounts = {}
     for a, invested in invested_in.items():
         account_cash = _cash(dates, [e for e in ledger if _account(e) == a])
-        valued = [values for h, values in holding_values.items() if h.account == a]
-        unvalued = any(h.account == a and h not in holding_values for h in holdings)
-        parts = valued + list(_cash_values(account_cash, czk_rates).values())
+        parts = [values for h, values in holding_values.items() if h.account == a]
+        parts += _cash_values(account_cash, czk_rates).values()
         accounts[a] = AccountTimeline(
             managed=a in managed,
             amount_invested=_running_total(dates, invested),
-            value=None if (unvalued and not valued) or not parts else _sum(parts),
+            value=_sum(parts) if parts else None,
             hurdles=_hurdles(dates, invested, levels_by_series),
-            cash=account_cash,
             cash_not_valued={c: no_rates(c) for c in account_cash if c not in czk_rates},
         )
     every_investment = [i for invested in invested_in.values() for i in invested]

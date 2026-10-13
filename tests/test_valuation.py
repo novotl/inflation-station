@@ -574,21 +574,21 @@ def test_an_accounts_value_is_its_holdings_and_its_cash_in_czk_negative_or_not()
 
     # 13 Jun: 100 CZK + 16 EUR x 25. 14 Jun: 100 CZK + 0.16 units x 100 EUR x 25 - 1 EUR x 25; USD has no rates.
     assert t.accounts[PORTU].value == (Decimal(500), Decimal(100) + Decimal(400) - Decimal(25))
-    assert t.accounts[PORTU].cash["EUR"] == (Decimal(16), Decimal(-1))
     assert t.accounts[PORTU].cash_not_valued == {"USD": "no USD rates stored"}
     # No Cash outside Managed Accounts.
     assert t.accounts[JT].value == t.holding_values[jt(CZK_FUND)]
-    assert t.accounts[JT].cash == {}
 
 
-def test_an_account_none_of_whose_holdings_can_be_valued_has_no_value() -> None:
+def test_an_account_has_no_value_only_when_nothing_in_it_can_be_valued() -> None:
     t = timeline(
-        [],
+        [purchase(date(2021, 6, 13), "1000")],
         ledger=[entry(date(2021, 6, 13), DEPOSIT, "500"), trade(date(2021, 6, 13), "0.04", "-4")],
         today=date(2021, 6, 13),
     )
 
-    assert t.accounts[PORTU].value is None
+    # Neither fund has prices and EUR has no rates, but Portu's CZK Cash can be valued, as in the portfolio's value.
+    assert t.accounts[PORTU].value == t.portfolio_value == (Decimal(500),)
+    assert t.accounts[JT].value is None
 
 
 def test_cash_is_valued_in_czk_at_the_last_known_rate_of_each_currency() -> None:

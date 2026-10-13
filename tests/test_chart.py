@@ -466,7 +466,6 @@ def test_each_account_has_a_section_headed_by_its_platform_and_name_largest_valu
     run("--data-dir", tmp_path, "chart")
 
     jt, portu = page(tmp_path)["accounts"]
-    # Portu's funds have no prices, so it has no value and comes last.
     assert (jt["name"], jt["managed"], portu["name"], portu["managed"]) == (
         "J&T Banka · 900000001",
         False,
@@ -477,14 +476,10 @@ def test_each_account_has_a_section_headed_by_its_platform_and_name_largest_valu
     assert jt["invested"] == 235000  # noqa: PLR2004 - the fixture's seven Purchases
     assert jt["benchmarkHurdle"] == pytest.approx(hurdle_on_1_jul(CSU_MAY))
     assert [h["name"] for h in jt["hurdles"]] == ["ČSÚ CPI", "Eurostat HICP"]
-    # A Managed Account's money invested is its two Deposits.
-    assert (portu["invested"], portu["value"], portu["notValued"], portu["relative"]) == (
-        15000,
-        None,
-        "none of its funds valued",
-        [],
-    )
-    # Its value, once its funds are priced, will still leave out its Cash in currencies without rates.
+    # A Managed Account's money invested is its two Deposits. Its funds have no prices, so its value is its Cash: 8 116
+    # CZK, and no EUR.
+    assert (portu["invested"], portu["value"], portu["notValued"]) == (15000, 8116, None)
+    # It names what its value leaves out: its funds, and its Cash in currencies without rates.
     assert portu["leftOut"] == [
         "SXR7 GY (no prices stored)",
         "CSPX LN (no prices stored)",
@@ -589,4 +584,41 @@ def test_one_fund_in_two_accounts_is_two_holdings_each_naming_its_account(tmp_pa
         "FF - World Fund A-ACC-CZK (J&T Banka · 900000001)",
         "FF - World Fund A-ACC-CZK (J&T Banka · 900000002)",
         "Amount invested",
+    }
+
+
+def test_an_account_with_nothing_valued_says_whether_its_funds_or_its_cash_are_missing(tmp_path: Path) -> None:
+    usd = LedgerEntry(
+        "portu", "Cash only", "1", date(2021, 6, 13), DEPOSIT, "", "", Decimal(0), None, Decimal(100), "USD"
+    )
+    buy = replace(
+        usd,
+        account_id="Moje portfolio",
+        kind=BUY,
+        isin="IE00B5BMR087",
+        fund_name="CSPX LN",
+        units=Decimal(1),
+        unit_price=Decimal(100),
+        amount=Decimal(-100),
+    )
+    bought = Purchase(
+        platform="jt",
+        account_id="900000001",
+        source_row_id="1",
+        isin="LU1756523376",
+        fund_name="FF - World Fund A-ACC-CZK",
+        trade_date=date(2021, 6, 13),
+        units=Decimal(1),
+        unit_price=Decimal(10),
+        unit_price_currency="CZK",
+        gross_czk=Decimal(10),
+        fee=Decimal(0),
+        fee_currency="CZK",
+    )
+    write_chart(timeline([bought], ledger=[usd, buy], today=date(2021, 6, 13)), tmp_path)
+
+    assert {a["name"]: a["notValued"] for a in page(tmp_path)["accounts"]} == {
+        "J&T Banka · 900000001": "none of its funds valued",
+        "Portu · Cash only": "none of its Cash valued",
+        "Portu · Moje portfolio": "none of its funds or Cash valued",
     }

@@ -112,11 +112,11 @@ function renderDashboard(el) {
     ${P.hurdles.map(h => kpi(`vs inflation (${h.name})`, signed(minus(P.value, h.value), czk(minus(P.value, h.value))),
       `${signed(vs(P.value, h.value), pct(vs(P.value, h.value)))} <span class="muted">· hurdle ${czk(h.value)}</span>`)).join("")}
     </div><div class="card"><div id="dashboard-chart"></div></div>
-    <h2>Accounts</h2><div class="accounts"></div>
+    <h2>Accounts</h2><div class="account-cards"></div>
     <h2>Funds</h2><div class="card table-card"><table class="funds"><thead><tr><th>Fund</th><th>Priced in</th><th>Value</th>
     <th>Invested</th><th>Gain</th><th>vs ${esc(D.benchmark ?? "inflation")}</th><th>Units</th></tr></thead><tbody></tbody></table></div>`;
   czkChart("dashboard-chart", P.chart, 420);
-  const accounts = el.querySelector(".accounts");
+  const accounts = el.querySelector(".account-cards");
   D.accounts.forEach(a => {
     const card = document.createElement("div");
     card.className = "card";
@@ -166,7 +166,7 @@ function renderRelative(el) {
       <div class="kpi"><div class="label">Portfolio vs invested</div><div class="big ${cls(nominal)}">${pct(nominal)}</div>
         <div class="sub muted">${czk(P.value)} vs ${czk(P.invested)}</div></div></div>
     <div class="card"><div id="relative-chart"></div></div>
-    <h2>Per account and fund <span class="muted" style="font-size:14px;font-weight:normal">(same scale everywhere)</span></h2>
+    <h2>Per Account and fund <span class="muted" style="font-size:14px;font-weight:normal">(same scale everywhere)</span></h2>
     <div class="grid accounts"></div><div class="grid funds"></div>`;
   plot("relative-chart", P.relative, { yaxis: { tickformat: "+.0%", zeroline: false }, shapes: relativeShapes(), height: 380, margin: { t: 10 } }, { pct: true });
   const all = D.accounts.concat(D.funds).flatMap(f => f.relative.flatMap(t => t.y)).filter(y => y != null);
@@ -202,11 +202,11 @@ function renderFunds(el) {
       label: a.notValued ? "not valued" : standing(a.value, a.benchmarkHurdle, a.invested) })))
     .concat(D.funds.map(f => ({ key: "f" + f.key, f, name: f.name, value: f.value,
       rel: f.managed ? null : D.benchmark ? vs(f.value, f.benchmarkHurdle) : vs(f.value, f.invested),
-      label: f.notValued ? "not valued" : f.managed ? esc(f.account) : standing(f.value, f.benchmarkHurdle, f.invested) })));
+      label: f.notValued ? "not valued" : f.managed ? "Managed Account" : standing(f.value, f.benchmarkHurdle, f.invested) })));
   const height = () => Math.max(500, innerHeight - 300);
   let picked = "";
   const draw = () => {
-    strip.innerHTML = items.map(it => `<div class="item ${it.key === picked ? "sel" : ""}" data-key="${esc(it.key)}"><div class="n">${esc(it.name)}</div>
+    strip.innerHTML = items.map(it => `<div class="item ${it.key === picked ? "sel" : ""}" data-key="${esc(it.key)}"><div class="n">${esc(it.name)}${it.f ? ` <span class="muted">· ${esc(it.f.account)}</span>` : ""}</div>
       <div class="v"><span class="muted">${czk(it.value)}</span><span class="${cls(it.rel)}">${it.label}</span></div></div>`).join("");
     strip.querySelectorAll(".item").forEach(n => n.onclick = () => { picked = n.dataset.key; draw(); });
     const fact = (label, html) => `<div><b>${esc(label)}</b>${html}</div>`;

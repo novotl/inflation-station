@@ -77,7 +77,7 @@ table.funds tr.row.open { background: var(--accent-soft); }
 table.funds td.pos, table.funds td.neg { font-weight: 600; }
 
 /* A section per Account, styled like the overall chart above it. */
-.accounts h3 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+.account-cards h3 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
 
 /* Relative to inflation: the portfolio, then a small chart per fund on one scale. */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
