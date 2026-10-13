@@ -23,7 +23,7 @@ class PriceSource:
 def price_sources(funds: Mapping[str, str]) -> dict[str, PriceSource]:
     """The price source of each fund in `funds` (ISIN -> fund name), from the hand-edited mappings.
 
-    Raises naming every fund in neither mapping, and every ISIN in both, traded or not.
+    Raises naming every fund in neither mapping, and every ISIN in both, purchased or held or not.
     """
     pages, tickers = conseq.fund_pages(), yahoo.tickers()
     in_both = sorted(pages.keys() & tickers.keys())

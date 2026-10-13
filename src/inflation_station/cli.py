@@ -148,8 +148,8 @@ def chart(data_dir: Path) -> None:
 
 
 def _stored_purchases(data_dir: Path, purpose: str) -> list[Purchase]:
-    """The stored Purchases; raises if there are none. Only reads: no database is created in an empty data directory."""
-    purchases = Store(data_dir).purchases() if database_exists(data_dir) else []
+    """The stored Purchases; raises if there are none."""
+    purchases, _ = _read_purchases_and_ledger(data_dir)
     if not purchases:
         msg = f"no Purchases {purpose} yet; import first: inflation-station import <file>..."
         raise InflationStationError(msg)
@@ -178,7 +178,8 @@ def _stored_purchases_and_ledger(data_dir: Path) -> tuple[list[Purchase], list[L
 
 
 def _read_purchases_and_ledger(data_dir: Path) -> tuple[list[Purchase], list[LedgerEntry]]:
-    """The stored Purchases and ledger entries, possibly none. Only reads, like `_stored_purchases`."""
+    """The stored Purchases and ledger entries, possibly none. Only reads: no database is created in an empty data
+    directory."""
     if not database_exists(data_dir):
         return [], []
     store = Store(data_dir)

@@ -100,7 +100,7 @@ def test_a_fund_listed_by_both_conseq_and_yahoo_fails_naming_it(
     )
 
 
-def test_an_untraded_isin_listed_by_both_conseq_and_yahoo_fails_naming_it(
+def test_an_isin_never_purchased_or_held_listed_by_both_conseq_and_yahoo_fails_naming_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # FF America (LU0979392767) has a Conseq page but is not in the export.
