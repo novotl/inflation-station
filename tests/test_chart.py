@@ -552,21 +552,26 @@ def test_a_valued_holding_in_a_managed_account_charts_its_value_only(tmp_path: P
     assert page(tmp_path)["accounts"][0]["leftOut"] == []
 
 
-def test_one_fund_in_two_accounts_is_two_holdings_each_naming_its_account(tmp_path: Path) -> None:
-    bought = Purchase(
+def ff_world(units: int) -> Purchase:
+    """A J&T Purchase of `units` FF World units at 10 CZK, in Account 900000001 on 13 Jun 2021."""
+    return Purchase(
         platform="jt",
         account_id="900000001",
         source_row_id="1",
         isin="LU1756523376",
         fund_name="FF - World Fund A-ACC-CZK",
         trade_date=date(2021, 6, 13),
-        units=Decimal(2),
+        units=Decimal(units),
         unit_price=Decimal(10),
         unit_price_currency="CZK",
-        gross_czk=Decimal(20),
+        gross_czk=Decimal(units * 10),
         fee=Decimal(0),
         fee_currency="CZK",
     )
+
+
+def test_one_fund_in_two_accounts_is_two_holdings_each_naming_its_account(tmp_path: Path) -> None:
+    bought = ff_world(units=2)
     t = timeline(
         [bought, replace(bought, account_id="900000002", units=Decimal(3), gross_czk=Decimal(30))],
         prices=[FundPrice(isin="LU1756523376", day=date(2021, 6, 13), price=Decimal(10), currency="CZK")],
@@ -601,20 +606,7 @@ def test_an_account_with_nothing_valued_says_whether_its_funds_or_its_cash_are_m
         unit_price=Decimal(100),
         amount=Decimal(-100),
     )
-    bought = Purchase(
-        platform="jt",
-        account_id="900000001",
-        source_row_id="1",
-        isin="LU1756523376",
-        fund_name="FF - World Fund A-ACC-CZK",
-        trade_date=date(2021, 6, 13),
-        units=Decimal(1),
-        unit_price=Decimal(10),
-        unit_price_currency="CZK",
-        gross_czk=Decimal(10),
-        fee=Decimal(0),
-        fee_currency="CZK",
-    )
+    bought = ff_world(units=1)
     write_chart(timeline([bought], ledger=[usd, buy], today=date(2021, 6, 13)), tmp_path)
 
     assert {a["name"]: a["notValued"] for a in page(tmp_path)["accounts"]} == {

@@ -189,7 +189,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
             czk_per_unit = czk_rates[fund_currencies[h.isin]]
             holding_values[h] = _zero_when_not_held(units, _times(holding_currency_values[h], czk_per_unit))
     cash = _cash(dates, ledger)
-    cash_values = _cash_values(cash, czk_rates)
+    cash_values, cash_not_valued = _cash_values(cash, czk_rates)
     portfolio_parts = [*holding_values.values(), *cash_values.values()]
 
     levels_by_series = {
@@ -204,13 +204,14 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
     for a, invested in invested_in.items():
         account_cash = _cash(dates, [e for e in ledger if _account(e) == a])
         parts = [values for h, values in holding_values.items() if h.account == a]
-        parts += _cash_values(account_cash, czk_rates).values()
+        account_cash_values, account_cash_not_valued = _cash_values(account_cash, czk_rates)
+        parts += account_cash_values.values()
         accounts[a] = AccountTimeline(
             managed=a in managed,
             amount_invested=_running_total(dates, invested),
             value=_sum(parts) if parts else None,
             hurdles=_hurdles(dates, invested, levels_by_series),
-            cash_not_valued={c: no_rates(c) for c in account_cash if c not in czk_rates},
+            cash_not_valued=account_cash_not_valued,
         )
     every_investment = [i for invested in invested_in.values() for i in invested]
     bought_in = {h: [(p.trade_date, p.gross_czk) for p in purchased[h]] for h in holdings if h.account not in managed}
@@ -232,7 +233,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
         cash=cash,
         cash_values=cash_values,
         cash_value=_sum(cash_values.values()) if cash_values else None,
-        cash_not_valued={c: no_rates(c) for c in cash if c not in czk_rates},
+        cash_not_valued=cash_not_valued,
     )
 
 
@@ -262,12 +263,13 @@ def _cash(dates: Sequence[date], ledger: Sequence[LedgerEntry]) -> dict[str, tup
 
 def _cash_values(
     cash: Mapping[str, Sequence[Decimal]], czk_rates: Mapping[str, Sequence[Decimal | None]]
-) -> dict[str, tuple[Decimal | None, ...]]:
-    """CZK value of `cash` by currency, for the currencies with rates."""
+) -> tuple[dict[str, tuple[Decimal | None, ...]], dict[str, str]]:
+    """CZK value of `cash` by currency, for the currencies with rates; and why each of the others isn't valued."""
     # Taken as it is, so negative Cash counts against the value.
-    return {
+    values = {
         c: _zero_when_not_held(amounts, _times(amounts, czk_rates[c])) for c, amounts in cash.items() if c in czk_rates
     }
+    return values, {c: no_rates(c) for c in cash if c not in czk_rates}
 
 
 def _hurdles(
