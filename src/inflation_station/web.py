@@ -5,8 +5,9 @@ from urllib.error import URLError
 
 from inflation_station.errors import InflationStationError
 
-# Some sites turn away Python's default User-Agent.
-USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+# Some sites turn away Python's default User-Agent, and Yahoo Finance answers a full browser one (Chrome's, Firefox's)
+# with HTTP 429; every site we download from accepts this.
+USER_AGENT = "Mozilla/5.0"
 TIMEOUT_SECONDS = 30
 
 
