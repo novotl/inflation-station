@@ -575,6 +575,7 @@ def test_an_accounts_value_is_its_holdings_and_its_cash_in_czk_negative_or_not()
     # 13 Jun: 100 CZK + 16 EUR x 25. 14 Jun: 100 CZK + 0.16 units x 100 EUR x 25 - 1 EUR x 25; USD has no rates.
     assert t.accounts[PORTU].value == (Decimal(500), Decimal(100) + Decimal(400) - Decimal(25))
     assert t.accounts[PORTU].cash["EUR"] == (Decimal(16), Decimal(-1))
+    assert t.accounts[PORTU].cash_not_valued == {"USD": "no USD rates stored"}
     # No Cash outside Managed Accounts.
     assert t.accounts[JT].value == t.holding_values[jt(CZK_FUND)]
     assert t.accounts[JT].cash == {}

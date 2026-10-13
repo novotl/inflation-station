@@ -96,6 +96,10 @@ const holdingLine = f => `${esc(f.isin)} Â· ${esc(f.account)}${f.notValued ? ` Â
 const czkChartOr = (el, item, height) => item.chart.length ? czkChart(el, item.chart, height)
   : el.innerHTML = `<p class="neg" style="padding:24px 0">Not valued: ${esc(item.notValued)}</p>`;
 
+// Why an Account has no value, or what its value leaves out.
+const accountNotes = a => a.notValued ? `<p class="warn">Not valued: ${esc(a.notValued)}</p>`
+  : a.leftOut.length ? `<p class="warn">Left out of its value: ${a.leftOut.map(esc).join(", ")}</p>` : "";
+
 // ---------- dashboard: figures, the overall chart, a section per Account, a table of funds whose rows open their chart ----------
 function renderDashboard(el) {
   const kpi = (label, big, sub = "") => `<div class="kpi"><div class="label">${esc(label)}</div><div class="big">${big}</div><div class="sub">${sub}</div></div>`;
@@ -116,12 +120,13 @@ function renderDashboard(el) {
   D.accounts.forEach(a => {
     const card = document.createElement("div");
     card.className = "card";
-    const gain = minus(a.value, a.invested), real = minus(a.value, a.benchmarkHurdle);
+    const gain = minus(a.value, a.invested);
     card.innerHTML = `<h3>${esc(a.name)}</h3><div class="facts">
       <div><b>Value</b>${czk(a.value)}</div><div><b>Invested</b>${czk(a.invested)}${a.managed ? ` <span class="muted">(Deposits)</span>` : ""}</div>
       <div><b>Gain</b>${signed(gain, czk(gain))} ${signed(gain, pct(vs(a.value, a.invested)))}</div>
-      ${D.benchmark ? `<div><b>vs ${esc(D.benchmark)}</b>${signed(real, czk(real))} ${signed(real, pct(vs(a.value, a.benchmarkHurdle)))}</div>` : ""}
-      </div>${a.notValued ? `<p class="warn">Not valued: ${esc(a.notValued)}</p>` : ""}<div></div>`;
+      ${a.hurdles.map(h => `<div><b>vs ${esc(h.name)}</b>${signed(minus(a.value, h.value), czk(minus(a.value, h.value)))}
+        ${signed(vs(a.value, h.value), pct(vs(a.value, h.value)))}</div>`).join("")}
+      </div>${accountNotes(a)}<div></div>`;
     accounts.append(card);
     czkChart(card.lastElementChild, a.chart, 360);
   });
@@ -213,7 +218,7 @@ function renderFunds(el) {
     } else if (picked.startsWith("a")) {
       const { a } = items.find(it => it.key === picked);
       detail.innerHTML = `<h1>${esc(a.name)}</h1><div class="facts">${fact("Value", czk(a.value))}${fact(a.managed ? "Deposits" : "Invested", czk(a.invested))}
-        ${a.hurdles.map(h => fact(`Hurdle (${h.name})`, czk(h.value))).join("")}</div>${a.notValued ? `<p class="warn">Not valued: ${esc(a.notValued)}</p>` : ""}<div></div>`;
+        ${a.hurdles.map(h => fact(`Hurdle (${h.name})`, czk(h.value))).join("")}</div>${accountNotes(a)}<div></div>`;
       czkChart(detail.lastElementChild, a.chart, height());
     } else {
       const { f } = items.find(it => it.key === picked);

@@ -483,6 +483,14 @@ def test_each_account_has_a_section_headed_by_its_platform_and_name_largest_valu
         "none of its funds valued",
         [],
     )
+    # Its value, once its funds are priced, will still leave out its Cash in currencies without rates.
+    assert portu["leftOut"] == [
+        "SXR7 GY (no prices stored)",
+        "CSPX LN (no prices stored)",
+        "ZPRS GY (no prices stored)",
+        "USD Cash (no USD rates stored)",
+    ]
+    assert jt["leftOut"] == []
     # Styled like the overall chart: value, amount invested and both hurdles, each in its role.
     assert {name: line["meta"] for name, line in by_name(jt["chart"]).items()} == {
         "Value": "value",
@@ -545,3 +553,4 @@ def test_a_valued_holding_in_a_managed_account_charts_its_value_only(tmp_path: P
     assert hover(holding["chart"][0], -1) == "220.00 CZK · 2 units"
     # The Account's value is its Holding plus its Cash: 300 CZK left of the Deposit.
     assert page(tmp_path)["accounts"][0]["value"] == 520  # noqa: PLR2004
+    assert page(tmp_path)["accounts"][0]["leftOut"] == []

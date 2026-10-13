@@ -82,16 +82,16 @@ def _page_data(timeline: Timeline, warnings: Sequence[str]) -> dict[str, Any]:
             "relative": _relative(timeline.dates, timeline.portfolio_value, timeline.amount_invested, hurdle),
         },
         "accounts": [
-            _account(timeline, account, benchmark)
+            _account_section(timeline, account, benchmark)
             for account in _by_last_value(
                 timeline.accounts, {a: t.value for a, t in timeline.accounts.items() if t.value is not None}
             )
         ],
-        "funds": [_holding(timeline, holding, benchmark) for holding in order],
+        "funds": [_holding_section(timeline, holding, benchmark) for holding in order],
     }
 
 
-def _account(timeline: Timeline, account: Account, benchmark: str | None) -> dict[str, Any]:
+def _account_section(timeline: Timeline, account: Account, benchmark: str | None) -> dict[str, Any]:
     """An Account's figures on the last day and its chart, as the portfolio's."""
     series = timeline.accounts[account]
     hurdle = series.hurdles[benchmark] if benchmark else None
@@ -104,12 +104,19 @@ def _account(timeline: Timeline, account: Account, benchmark: str | None) -> dic
         "hurdles": [{"name": NAMES[s], "value": _last(h.values)} for s, h in series.hurdles.items()],
         "benchmarkHurdle": _last(hurdle.values) if hurdle else None,
         "notValued": None if series.value is not None else "none of its funds valued",
+        # What its value leaves out: its funds and its Cash in each currency that can't be valued, saying why.
+        "leftOut": [
+            f"{timeline.fund_names[h.isin]} ({timeline.not_valued[h.isin]})"
+            for h in timeline.units_held
+            if h.account == account and h not in timeline.holding_values
+        ]
+        + [f"{currency} Cash ({reason})" for currency, reason in series.cash_not_valued.items()],
         "chart": _account_chart(timeline, account),
         "relative": _relative(timeline.dates, series.value, series.amount_invested, hurdle),
     }
 
 
-def _holding(timeline: Timeline, holding: Holding, benchmark: str | None) -> dict[str, Any]:
+def _holding_section(timeline: Timeline, holding: Holding, benchmark: str | None) -> dict[str, Any]:
     """A Holding's figures on the last day and its charts. In a Managed Account it has nothing invested in it, so no
     amount invested or hurdle (ADR-0002).
     """

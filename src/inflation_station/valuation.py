@@ -74,6 +74,8 @@ class AccountTimeline:
     hurdles: Mapping[str, Hurdle]
     # Its Cash by currency, for every currency in its ledger, as `Timeline.cash`.
     cash: Mapping[str, tuple[Decimal, ...]]
+    # Why its Cash in each currency left out of `value` couldn't be valued, by currency.
+    cash_not_valued: Mapping[str, str]
 
 
 @dataclass(frozen=True)
@@ -134,6 +136,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
     first = min([p.trade_date for p in purchases] + [e.day for e in ledger])
     dates = tuple(first + timedelta(days=n) for n in range((today - first).days + 1))
 
+    # Only Managed Accounts have ledgers.
     managed = {_account(e) for e in ledger}
     holdings = sorted({Holding(_account(p), p.isin) for p in purchases} | {_holding(e) for e in ledger if e.isin})
     purchased = {h: [p for p in purchases if Holding(_account(p), p.isin) == h] for h in holdings}
@@ -200,8 +203,9 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
             managed=a in managed,
             amount_invested=_running_total(dates, invested),
             value=None if (unvalued and not valued) or not parts else _sum(parts),
-            hurdles={series: _hurdle(dates, invested, levels) for series, levels in levels_by_series.items()},
+            hurdles=_hurdles(dates, invested, levels_by_series),
             cash=cash,
+            cash_not_valued={c: no_rates(c) for c in cash if c not in czk_rates},
         )
     every_investment = [i for invested in invested_in.values() for i in invested]
     bought_in = {h: [(p.trade_date, p.gross_czk) for p in purchased[h]] for h in holdings if h.account not in managed}
@@ -219,20 +223,19 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
         priced_in=priced_in,
         portfolio_value=_sum(list(holding_values.values())) if holding_values else None,
         not_valued=not_valued,
-        hurdles={series: _hurdle(dates, every_investment, levels) for series, levels in levels_by_series.items()},
-        holding_hurdles={
-            h: {series: _hurdle(dates, bought, levels) for series, levels in levels_by_series.items()}
-            for h, bought in bought_in.items()
-        },
+        hurdles=_hurdles(dates, every_investment, levels_by_series),
+        holding_hurdles={h: _hurdles(dates, bought, levels_by_series) for h, bought in bought_in.items()},
         cash=_cash(dates, ledger),
     )
 
 
 def _account(row: Purchase | LedgerEntry) -> Account:
+    """The Account a Purchase or ledger entry is in."""
     return Account(row.platform, row.account_id)
 
 
 def _holding(entry: LedgerEntry) -> Holding:
+    """The Holding a buy or sell moves the units of."""
     return Holding(_account(entry), entry.isin)
 
 
@@ -242,6 +245,15 @@ def _cash(dates: Sequence[date], ledger: Sequence[LedgerEntry]) -> dict[str, tup
         currency: _running_total(dates, [(e.day, e.amount) for e in ledger if e.currency == currency])
         for currency in sorted({e.currency for e in ledger})
     }
+
+
+def _hurdles(
+    dates: Sequence[date],
+    invested: Sequence[tuple[date, Decimal]],
+    levels_by_series: Mapping[str, Sequence[IndexLevel]],
+) -> dict[str, Hurdle]:
+    """`_hurdle` by price index series."""
+    return {series: _hurdle(dates, invested, levels) for series, levels in levels_by_series.items()}
 
 
 def _hurdle(dates: Sequence[date], invested: Sequence[tuple[date, Decimal]], levels: Sequence[IndexLevel]) -> Hurdle:
