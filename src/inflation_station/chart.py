@@ -158,12 +158,15 @@ def _overall(timeline: Timeline) -> list[dict[str, Any]]:
 
 
 def _composition(timeline: Timeline, order: Sequence[Holding]) -> list[dict[str, Any]]:
-    """`_overall` with the portfolio value split: each valued Holding's value stacked, largest on top.
+    """`_overall` with the portfolio value split: Cash at the bottom, then each valued Holding's value, largest on top.
 
     Each is named by its fund, and by its Account too when the fund is held in more than one.
     """
     held_in = [h.isin for h in order]
-    traces = [
+    traces = []
+    if timeline.cash_value is not None:
+        traces.append(_line(timeline.dates, timeline.cash_value, "Cash", stackgroup="value", line={"width": 0}))
+    traces += [
         _holding_value(
             timeline,
             h,

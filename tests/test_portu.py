@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
+from test_chart import page
 
 from inflation_station import portu
 from inflation_station.cli import main
@@ -182,7 +183,7 @@ def test_the_deposits_are_the_amount_invested() -> None:
     assert t.amount_invested[-1] == Decimal("15000.00")
 
 
-def test_chart_names_portu_funds_as_having_no_prices(tmp_path: Path) -> None:
+def test_chart_names_portu_funds_with_no_prices_and_cash_with_no_rates(tmp_path: Path) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
 
     code, out, err = run("--data-dir", tmp_path, "chart")
@@ -190,4 +191,64 @@ def test_chart_names_portu_funds_as_having_no_prices(tmp_path: Path) -> None:
     assert err == (
         f"Not valued ({NO_PRICES}; run inflation-station fetch-prices): "
         f"SXR7 GY ({SXR7}), CSPX LN ({CSPX}), ZPRS GY ({ZPRS})\n"
+        "Not valued (no EUR rates stored; run inflation-station fetch-fx): EUR Cash\n"
+        "Not valued (no USD rates stored; run inflation-station fetch-fx): USD Cash\n"
+    )
+
+
+def eur_cash_export(tmp_path: Path) -> Path:
+    """An export with 2 400 CZK and 100 EUR of Cash from 3 May, within the recorded EUR months, and no funds."""
+    return write(
+        tmp_path / "eur.csv",
+        [
+            rows()[0],
+            "03.05.2021;Moje portfolio;Vklad z bankovního účtu;;;;;;5 000,00;CZK;;\n",
+            f"03.05.2021;Moje portfolio;Forex prodej{portu.TYPE_SEPARATOR}CZK/EUR;;;;CZK/EUR;;-2 600,00;CZK;;\n",
+            f"03.05.2021;Moje portfolio;Forex nákup{portu.TYPE_SEPARATOR}EUR/CZK;;;;EUR/CZK;;100,00;EUR;;\n",
+        ],
+    )
+
+
+def test_fetch_fx_fetches_the_currencies_cash_is_held_in(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", eur_cash_export(tmp_path))
+
+    assert run("--data-dir", tmp_path, "fetch-fx") == (0, "EUR: 44 rates added, 0 already present.\n", "")
+
+
+def test_the_chart_values_cash_and_stacks_it_under_the_funds(tmp_path: Path) -> None:
+    # Half an SXR7 at 3 May's close, paid from the 100 EUR.
+    export = write(
+        tmp_path / "eur_and_sxr7.csv",
+        [
+            *rows(eur_cash_export(tmp_path)),
+            f"03.05.2021;{ACCOUNT};Nákup{portu.TYPE_SEPARATOR}SXR7 GY;SXR7 GY;{SXR7};0,5000;;139,3400;-69,67;EUR;;\n",
+        ],
+    )
+    run("--data-dir", tmp_path, "import", export)
+    run("--data-dir", tmp_path, "fetch-prices")
+    run("--data-dir", tmp_path, "fetch-fx")
+
+    assert run("--data-dir", tmp_path, "chart")[::2] == (0, "")  # nothing left out
+    # On 1 Jul 2021, at ČNB's 25.505 CZK per EUR and SXR7's 30 Jun close of 143.72 EUR.
+    cash = 2400 + (100 - 69.67) * 25.505
+    sxr7 = 0.5 * 143.72 * 25.505
+    assert page(tmp_path)["portfolio"]["value"] == pytest.approx(cash + sxr7)
+    stacked = page(tmp_path)["portfolio"]["composition"]
+    assert [(t["name"], t.get("stackgroup")) for t in stacked] == [
+        ("Cash", "value"),
+        ("SXR7 GY", "value"),
+        ("Amount invested", None),
+    ]
+    assert stacked[0]["y"][-1] == pytest.approx(cash)
+    assert stacked[1]["y"][-1] == pytest.approx(sxr7)
+
+
+def test_fetch_fx_with_only_czk_cash_fetches_nothing(tmp_path: Path, recorded: dict[str, Path]) -> None:
+    run("--data-dir", tmp_path, "import", write(tmp_path / "czk.csv", [rows()[0], rows()[-1]]))
+    recorded.clear()  # any request fails the test
+
+    assert run("--data-dir", tmp_path, "fetch-fx") == (
+        0,
+        "Every Purchase and all Cash is in CZK; no rates to fetch.\n",
+        "",
     )

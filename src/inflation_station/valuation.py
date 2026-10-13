@@ -28,7 +28,7 @@ NO_PRICES = "no prices stored"
 
 
 def no_rates(currency: str) -> str:
-    """Why a fund priced in `currency` can't be valued when no rates of it are stored."""
+    """Why a fund priced in, or Cash held in, `currency` can't be valued when no rates of it are stored."""
     return f"no {currency} rates stored"
 
 
@@ -110,7 +110,7 @@ class Timeline:
     # What each fund is priced in, by ISIN, for every fund purchased or held: the currencies of its prices, or the
     # currency of its latest Purchase (else of its latest buy or sell) when it has none.
     priced_in: Mapping[str, str]
-    # The sum of `holding_values`; None when no fund can be valued.
+    # The sum of `holding_values` and `cash_values`; None when no fund or Cash can be valued.
     portfolio_value: tuple[Decimal | None, ...] | None
     # Why each fund that can't be valued couldn't be, by ISIN.
     not_valued: Mapping[str, str]
@@ -121,6 +121,13 @@ class Timeline:
     # Cash in Managed Accounts by currency, for every currency in their ledgers: the sum of the entries dated on or
     # before each day. Negative when a hedging leg goes out a day before the other comes in.
     cash: Mapping[str, tuple[Decimal, ...]]
+    # CZK value of `cash` by currency, for the currencies that can be valued: the Cash x the last known CZK rate on
+    # or before the day, for currencies other than CZK.
+    cash_values: Mapping[str, tuple[Decimal | None, ...]]
+    # The sum of `cash_values`; None when no Cash can be valued.
+    cash_value: tuple[Decimal | None, ...] | None
+    # Why the Cash in each currency left out of `cash_values` couldn't be valued, by currency.
+    cash_not_valued: Mapping[str, str]
 
 
 def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
@@ -183,6 +190,9 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
             holding_currency_values[h] = _zero_when_not_held(units, _times(units, unit_prices[h.isin]))
             czk_per_unit = czk_rates[fund_currencies[h.isin]]
             holding_values[h] = _zero_when_not_held(units, _times(holding_currency_values[h], czk_per_unit))
+    cash = _cash(dates, ledger)
+    cash_values = _cash_values(cash, czk_rates)
+    portfolio_parts = [*holding_values.values(), *cash_values.values()]
 
     levels_by_series = {
         series: [i for i in index_levels if i.series == series] for series in sorted({i.series for i in index_levels})
@@ -194,18 +204,17 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
     }
     accounts = {}
     for a, invested in invested_in.items():
-        entries = [e for e in ledger if _account(e) == a]
-        cash = _cash(dates, entries)
+        account_cash = _cash(dates, [e for e in ledger if _account(e) == a])
         valued = [values for h, values in holding_values.items() if h.account == a]
         unvalued = any(h.account == a and h not in holding_values for h in holdings)
-        parts = valued + [_times(cash[c], czk_rates[c]) for c in cash if c in czk_rates]
+        parts = valued + list(_cash_values(account_cash, czk_rates).values())
         accounts[a] = AccountTimeline(
             managed=a in managed,
             amount_invested=_running_total(dates, invested),
             value=None if (unvalued and not valued) or not parts else _sum(parts),
             hurdles=_hurdles(dates, invested, levels_by_series),
-            cash=cash,
-            cash_not_valued={c: no_rates(c) for c in cash if c not in czk_rates},
+            cash=account_cash,
+            cash_not_valued={c: no_rates(c) for c in account_cash if c not in czk_rates},
         )
     every_investment = [i for invested in invested_in.values() for i in invested]
     bought_in = {h: [(p.trade_date, p.gross_czk) for p in purchased[h]] for h in holdings if h.account not in managed}
@@ -214,19 +223,27 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
         amount_invested=_running_total(dates, every_investment),
         accounts=accounts,
         holding_amount_invested={h: _running_total(dates, bought) for h, bought in bought_in.items()},
-        # A fund's name on a Platform where you pick the funds wins over its ticker in a Managed Account.
-        fund_names=dict(sorted((held_fund_names(ledger) | fund_names(purchases)).items())),
+        fund_names=all_fund_names(purchases, ledger),
         units_held=units_held,
         holding_values=holding_values,
         holding_currency_values=holding_currency_values,
         fund_currencies=fund_currencies,
         priced_in=priced_in,
-        portfolio_value=_sum(list(holding_values.values())) if holding_values else None,
+        portfolio_value=_sum(portfolio_parts) if portfolio_parts else None,
         not_valued=not_valued,
         hurdles=_hurdles(dates, every_investment, levels_by_series),
         holding_hurdles={h: _hurdles(dates, bought, levels_by_series) for h, bought in bought_in.items()},
-        cash=_cash(dates, ledger),
+        cash=cash,
+        cash_values=cash_values,
+        cash_value=_sum(cash_values.values()) if cash_values else None,
+        cash_not_valued={c: no_rates(c) for c in cash if c not in czk_rates},
     )
+
+
+def all_fund_names(purchases: Iterable[Purchase], ledger: Iterable[LedgerEntry]) -> dict[str, str]:
+    """The name of every fund purchased or held, by ISIN, sorted by ISIN."""
+    # A fund's name on a Platform where you pick the funds wins over its ticker in a Managed Account.
+    return dict(sorted((held_fund_names(ledger) | fund_names(purchases)).items()))
 
 
 def _account(row: Purchase | LedgerEntry) -> Account:
@@ -244,6 +261,16 @@ def _cash(dates: Sequence[date], ledger: Sequence[LedgerEntry]) -> dict[str, tup
     return {
         currency: _running_total(dates, [(e.day, e.amount) for e in ledger if e.currency == currency])
         for currency in sorted({e.currency for e in ledger})
+    }
+
+
+def _cash_values(
+    cash: Mapping[str, Sequence[Decimal]], czk_rates: Mapping[str, Sequence[Decimal | None]]
+) -> dict[str, tuple[Decimal | None, ...]]:
+    """CZK value of `cash` by currency, for the currencies with rates."""
+    # Taken as it is, so negative Cash counts against the value.
+    return {
+        c: _zero_when_not_held(amounts, _times(amounts, czk_rates[c])) for c, amounts in cash.items() if c in czk_rates
     }
 
 
@@ -300,9 +327,11 @@ def _next_month(month: date) -> date:
     return (month + timedelta(days=31)).replace(day=1)
 
 
-def _zero_when_not_held(units_held: Sequence[Decimal], values: Sequence[Decimal | None]) -> tuple[Decimal | None, ...]:
-    """`values` on the days units are held, else 0: nothing held is worth nothing, even before a price is known."""
-    return tuple(value if units else Decimal(0) for units, value in zip(units_held, values, strict=True))
+def _zero_when_not_held(held: Sequence[Decimal], values: Sequence[Decimal | None]) -> tuple[Decimal | None, ...]:
+    """`values` on the days some units or Cash are held, else 0: nothing held is worth nothing, even before a price or
+    rate is known.
+    """
+    return tuple(value if amount else Decimal(0) for amount, value in zip(held, values, strict=True))
 
 
 def _last_known(dates: Sequence[date], points: Sequence[tuple[date, Decimal]]) -> tuple[Decimal | None, ...]:

@@ -14,6 +14,7 @@ CONSEQ = Path(__file__).parent / "fixtures" / "conseq"
 CNB = Path(__file__).parent / "fixtures" / "cnb"
 CSU = Path(__file__).parent / "fixtures" / "csu"
 EUROSTAT = Path(__file__).parent / "fixtures" / "eurostat"
+YAHOO = Path(__file__).parent / "fixtures" / "yahoo"
 FUND_PAGE = "https://www.conseq.cz/investice/prehled-fondu/"
 PRICE_HISTORY = "https://www.conseq.cz/Conseq/Pricehist.ashx?productid={}&culture=cs-CZ"
 EUR_RATES = "https://api.cnb.cz/cnbapi/exrates/daily-currency-month?currency=EUR&yearMonth={}&lang=EN"
@@ -22,6 +23,8 @@ HICP_JSON = (
     "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_minr"
     "?geo=CZ&coicop18=TOTAL&unit=I15&format=JSON&lang=EN"
 )
+# Every daily close before 1 Jul 2021 (00:00 UTC), the tests' "today".
+CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{}?period1=0&period2=1625097600&interval=1d"
 # The months of EUR rates recorded: from the first EUR Purchase in the J&T fixture to "today".
 EUR_MONTHS = ("2021-05", "2021-06", "2021-07")
 # The recorded prices end on this day.
@@ -41,6 +44,7 @@ def recorded() -> dict[str, Path | InflationStationError]:
         **{FUND_PAGE + slug: CONSEQ / f"{slug}.html" for slug in pages},
         **{PRICE_HISTORY.format(p): CONSEQ / f"pricehist-{p}.xlsx" for p in (9613, 5485, 8804, 9171)},
         **{EUR_RATES.format(month): CNB / f"eur-{month}.json" for month in EUR_MONTHS},
+        **{CHART.format(ticker): YAHOO / f"{ticker}.json" for ticker in ("SXR7.DE", "CSPX.L", "ZPRS.DE")},
         CPI_CSV: CSU / "cen0101ht02.csv",
         HICP_JSON: EUROSTAT / "prc_hicp_minr-cz.json",
     }

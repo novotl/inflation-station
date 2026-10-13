@@ -589,3 +589,89 @@ def test_an_account_none_of_whose_holdings_can_be_valued_has_no_value() -> None:
     )
 
     assert t.accounts[PORTU].value is None
+
+
+def test_cash_is_valued_in_czk_at_the_last_known_rate_of_each_currency() -> None:
+    t = timeline(
+        [],
+        ledger=[
+            entry(date(2021, 6, 11), DEPOSIT, "1000"),  # a Friday
+            entry(date(2021, 6, 11), FOREX_SELL, "-700"),
+            entry(date(2021, 6, 11), FOREX_BUY, "20", currency="EUR"),
+            entry(date(2021, 6, 11), FOREX_BUY, "10", currency="USD"),
+        ],
+        rates=[
+            rate(date(2021, 6, 11), "25"),
+            rate(date(2021, 6, 14), "26"),
+            rate(date(2021, 6, 10), "20", currency="USD"),
+        ],
+        today=date(2021, 6, 14),
+    )
+
+    assert t.cash_values == {
+        "CZK": (Decimal(300),) * 4,
+        # Saturday and Sunday are valued at Friday's rate.
+        "EUR": (Decimal(500), Decimal(500), Decimal(500), Decimal(520)),
+        "USD": (Decimal(200),) * 4,
+    }
+    assert t.cash_value == t.portfolio_value == (Decimal(1000), Decimal(1000), Decimal(1000), Decimal(1020))
+    assert t.cash_not_valued == {}
+
+
+def test_portfolio_value_is_the_funds_plus_the_cash_so_fees_reduce_it() -> None:
+    t = timeline(
+        [purchase(date(2021, 6, 13), "1000", units="2")],
+        ledger=[entry(date(2021, 6, 13), DEPOSIT, "500"), entry(date(2021, 6, 14), FEE, "-25")],
+        prices=[price(date(2021, 6, 13), "10")],
+        today=date(2021, 6, 14),
+    )
+
+    assert t.portfolio_value == (Decimal(520), Decimal(495))
+
+
+def test_negative_cash_is_valued_as_negative() -> None:
+    t = timeline(
+        [],
+        ledger=[
+            entry(date(2021, 6, 13), DEPOSIT, "1000"),
+            # A hedging swap: the USD leg goes out a day before the CZK leg comes in.
+            entry(date(2021, 6, 13), FOREX_SELL, "-50", currency="USD"),
+            entry(date(2021, 6, 14), FOREX_BUY, "1000", currency="CZK"),
+            entry(date(2021, 6, 14), FOREX_BUY, "50", currency="USD"),
+            entry(date(2021, 6, 14), FOREX_SELL, "-1000", currency="CZK"),
+        ],
+        rates=[rate(date(2021, 6, 13), "20", currency="USD")],
+        today=date(2021, 6, 14),
+    )
+
+    assert t.cash_values["USD"] == (Decimal(-1000), Decimal(0))
+    assert t.portfolio_value == (Decimal(0), Decimal(1000))
+
+
+def test_cash_in_a_currency_without_rates_is_not_valued() -> None:
+    t = timeline(
+        [],
+        ledger=[entry(date(2021, 6, 13), DEPOSIT, "1000"), entry(date(2021, 6, 13), FOREX_BUY, "10", currency="USD")],
+        rates=[rate(date(2021, 6, 13), "25")],
+        today=date(2021, 6, 13),
+    )
+
+    assert set(t.cash_values) == {"CZK"}
+    assert t.portfolio_value == (Decimal(1000),)
+    assert t.cash_not_valued == {"USD": "no USD rates stored"}
+
+
+def test_cash_with_no_rate_yet_has_no_value_unless_there_is_none_of_it() -> None:
+    t = timeline(
+        [],
+        ledger=[
+            entry(date(2021, 6, 13), DEPOSIT, "1000"),
+            entry(date(2021, 6, 14), FOREX_BUY, "10", currency="EUR"),
+            entry(date(2021, 6, 15), FOREX_SELL, "-10", currency="EUR"),
+        ],
+        rates=[rate(date(2021, 6, 16), "25")],
+        today=date(2021, 6, 16),
+    )
+
+    assert t.cash_values["EUR"] == (Decimal(0), None, Decimal(0), Decimal(0))
+    assert t.portfolio_value == (Decimal(1000), None, Decimal(1000), Decimal(1000))

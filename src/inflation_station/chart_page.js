@@ -213,7 +213,7 @@ function renderFunds(el) {
     if (!picked) {
       detail.innerHTML = `<h1>Whole portfolio</h1><div class="facts">${fact("Value", czk(P.value))}${fact("Invested", czk(P.invested))}
         ${P.hurdles.map(h => fact(`Hurdle (${h.name})`, czk(h.value))).join("")}</div><div></div>`;
-      // Fund values stacked, so the top edge is the portfolio value.
+      // Cash and fund values stacked, so the top edge is the portfolio value.
       czkChart(detail.lastElementChild, P.composition, height());
     } else if (picked.startsWith("a")) {
       const { a } = items.find(it => it.key === picked);
