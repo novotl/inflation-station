@@ -14,6 +14,7 @@ from inflation_station.chart import write_chart
 from inflation_station.cli import main
 from inflation_station.fund_price import FundPrice
 from inflation_station.ledger import BUY, DEPOSIT, LedgerEntry
+from inflation_station.purchase import Purchase
 from inflation_station.valuation import timeline
 
 EXPORT = Path(__file__).parent / "fixtures" / "jt_export.csv"
@@ -554,3 +555,38 @@ def test_a_valued_holding_in_a_managed_account_charts_its_value_only(tmp_path: P
     # The Account's value is its Holding plus its Cash: 300 CZK left of the Deposit.
     assert page(tmp_path)["accounts"][0]["value"] == 520  # noqa: PLR2004
     assert page(tmp_path)["accounts"][0]["leftOut"] == []
+
+
+def test_one_fund_in_two_accounts_is_two_holdings_each_naming_its_account(tmp_path: Path) -> None:
+    bought = Purchase(
+        platform="jt",
+        account_id="900000001",
+        source_row_id="1",
+        isin="LU1756523376",
+        fund_name="FF - World Fund A-ACC-CZK",
+        trade_date=date(2021, 6, 13),
+        units=Decimal(2),
+        unit_price=Decimal(10),
+        unit_price_currency="CZK",
+        gross_czk=Decimal(20),
+        fee=Decimal(0),
+        fee_currency="CZK",
+    )
+    t = timeline(
+        [bought, replace(bought, account_id="900000002", units=Decimal(3), gross_czk=Decimal(30))],
+        prices=[FundPrice(isin="LU1756523376", day=date(2021, 6, 13), price=Decimal(10), currency="CZK")],
+        today=date(2021, 6, 14),
+    )
+    write_chart(t, tmp_path)
+
+    funds = page(tmp_path)["funds"]
+    assert [(f["account"], f["value"], f["invested"]) for f in funds] == [
+        ("J&T Banka · 900000002", 30, 30),
+        ("J&T Banka · 900000001", 20, 20),
+    ]
+    assert len({f["key"] for f in funds}) == 2  # noqa: PLR2004 - one per Holding
+    assert set(composition(tmp_path)) == {
+        "FF - World Fund A-ACC-CZK (J&T Banka · 900000001)",
+        "FF - World Fund A-ACC-CZK (J&T Banka · 900000002)",
+        "Amount invested",
+    }
