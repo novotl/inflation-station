@@ -1,49 +1,30 @@
 """Reads the files platforms export, recognising each file's format from its content."""
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from inflation_station import investika, jt, portu
+from inflation_station.domain import Rows
 from inflation_station.errors import InflationStationError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
 
-    from inflation_station.fee import Fee
-    from inflation_station.ledger import LedgerEntry
-    from inflation_station.purchase import Purchase
-
 PDF_SIGNATURE = b"%PDF-"
 
 
-@dataclass(frozen=True)
-class Imported:
-    """What a set of exports holds: Purchases from Platforms where you pick the funds and the Fees charged on them,
-    and Managed Portfolios' ledgers."""
-
-    purchases: list[Purchase]
-    fees: list[Fee]
-    ledger: list[LedgerEntry]
-
-
-def read_files(paths: Iterable[Path]) -> Imported:
+def read_files(paths: Iterable[Path]) -> Rows:
     """Read J&T and Portu exports (CSV) and INVESTIKA statement pairs (PDF). Raises if any file fails to read."""
-    purchases: list[Purchase] = []
-    fees: list[Fee] = []
-    ledger: list[LedgerEntry] = []
+    rows = Rows()
     statements = []
     for path in paths:
         if _is_pdf(path):
             statements.append(investika.read_pdf(path))
         elif portu.is_export(path):
-            ledger.extend(portu.read_export(path))
+            rows += portu.read_export(path)
         else:
-            jt_purchases, jt_fees = jt.read_export(path)
-            purchases.extend(jt_purchases)
-            fees.extend(jt_fees)
-    investika_purchases, investika_fees = investika.purchases_and_fees(statements)
-    return Imported(purchases=purchases + investika_purchases, fees=fees + investika_fees, ledger=ledger)
+            rows += jt.read_export(path)
+    return rows + investika.purchases_and_fees(statements)
 
 
 def _is_pdf(path: Path) -> bool:

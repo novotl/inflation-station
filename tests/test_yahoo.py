@@ -87,3 +87,13 @@ def test_a_response_that_is_not_a_chart_fails_naming_its_url(recorded: dict[str,
 
     with pytest.raises(InflationStationError, match=r"cannot read the Yahoo Finance chart .*SXR7\.DE"):
         yahoo.price_history(SXR7, "SXR7.DE")
+
+
+def test_a_listing_in_an_unknown_currency_fails(recorded: dict[str, Path], tmp_path: Path) -> None:
+    def unknown_currency(chart: dict) -> None:
+        chart["chart"]["result"][0]["meta"]["currency"] = "EUX"
+
+    edited(recorded, tmp_path, unknown_currency)
+
+    with pytest.raises(InflationStationError, match="'EUX' is not an ISO 4217 currency code"):
+        yahoo.price_history(SXR7, "SXR7.DE")

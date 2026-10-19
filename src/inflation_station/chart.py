@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from plotly.offline import get_plotlyjs
 
+from inflation_station.domain import Platform
 from inflation_station.price_index import CSU_CPI, EUROSTAT_HICP, NAMES
 from inflation_station.valuation import CZK, Holding
 
@@ -23,7 +24,8 @@ if TYPE_CHECKING:
     from datetime import date
     from pathlib import Path
 
-    from inflation_station.valuation import Hurdle, Portfolio, Timeline
+    from inflation_station.domain import Portfolio
+    from inflation_station.valuation import Hurdle, Timeline
 
 CHART_NAME = "chart.html"
 HOVER_CZK = "%{y:,.2f} CZK"
@@ -34,7 +36,7 @@ VALUE, INVESTED, INFLATION = "value", "invested", "inflation"
 # How each price index series' published hurdle is drawn; both share the inflation colour. Estimated parts are dotted.
 HURDLE_DASH = {CSU_CPI: "solid", EUROSTAT_HICP: "dash"}
 # How each Platform is named on the page.
-PLATFORM_NAMES = {"jt": "J&T Banka", "investika": "INVESTIKA", "portu": "Portu"}
+PLATFORM_NAMES = {Platform.JT: "J&T Banka", Platform.INVESTIKA: "INVESTIKA", Platform.PORTU: "Portu"}
 
 
 def write_chart(timeline: Timeline, data_dir: Path, *, warnings: Sequence[str] = ()) -> Path:
@@ -327,12 +329,13 @@ def _hurdle(dates: Sequence[date], hurdle: Hurdle, series: str, width: float = 1
 
 def _portfolio_name(portfolio: Portfolio) -> str:
     """`<Platform> · <Portfolio>`, as the Portfolio's section is headed."""
-    return f"{PLATFORM_NAMES.get(portfolio.platform, portfolio.platform)} · {portfolio.portfolio_id}"
+    return f"{PLATFORM_NAMES[portfolio.platform]} · {portfolio.name}"
 
 
 def _key(of: Portfolio | Holding) -> str:
     """A key the page picks a Portfolio or Holding by: unique, as its parts never contain a newline."""
-    return "\n".join([*of.portfolio, of.isin] if isinstance(of, Holding) else of)
+    portfolio = of.portfolio if isinstance(of, Holding) else of
+    return "\n".join([portfolio.platform, portfolio.key, *([of.isin] if isinstance(of, Holding) else [])])
 
 
 def _ratio(values: Sequence[Decimal | None], bases: Sequence[Decimal | None]) -> list[Decimal | None]:

@@ -14,21 +14,20 @@ from pypdf import PdfReader
 from pypdf.errors import PyPdfError
 
 from inflation_station import czech
+from inflation_station.currency import CZK
+from inflation_station.domain import Fee, Fund, Platform, Portfolio, Purchase, Rows
 from inflation_station.errors import InflationStationError
-from inflation_station.fee import charged_on
-from inflation_station.purchase import Purchase
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
     from decimal import Decimal
     from pathlib import Path
 
-    from inflation_station.fee import Fee
-
 CASH = "Pohyby na peněžním účtu"
 HOLDINGS = "Transakce na majetkovém účtu"
 KIND_NAMES = {CASH: "cash", HOLDINGS: "holdings"}
 CONTRACT = "Číslo smlouvy"
+
 
 # Cash statement rows.
 PAYMENT = "Odchozí platba z VÚ na investici"
@@ -103,7 +102,7 @@ def _portfolio(name: str, lines: list[str]) -> str:
     raise InflationStationError(msg)
 
 
-def purchases_and_fees(statements: Iterable[Statement]) -> tuple[list[Purchase], list[Fee]]:
+def purchases_and_fees(statements: Iterable[Statement]) -> Rows:
     """One Purchase per issue of units, and the Fee charged on it, from statements that pair up by Portfolio.
 
     Raises on anything unknown.
@@ -115,13 +114,15 @@ def purchases_and_fees(statements: Iterable[Statement]) -> tuple[list[Purchase],
         row_ids: set[str] = set()
         for cells, next_cells in _holdings_rows(holdings):
             try:
-                purchase, fee_czk = _purchase(holdings.portfolio, cells, next_cells, payments)
+                purchase, fee = _purchase(holdings.portfolio, cells, next_cells, payments)
                 purchases.append(_claim_row_id(purchase, row_ids))
             except RowError as e:
                 msg = f"{holdings.name} row {cells[2]!r} ordered {cells[-1]}: {e}"
                 raise InflationStationError(msg) from e
-            fees.extend(charged_on(purchase, fee_czk))
-    return purchases, fees
+            if fee:
+                # The Fee's identity is its Purchase's: one row of the holdings statement.
+                fees.append(Fee(purchase.portfolio, purchase.source_row_id, purchase.day, fee, CZK))
+    return Rows(purchases=purchases, fees=fees)
 
 
 def _pairs(statements: Iterable[Statement]) -> list[tuple[Statement, Statement]]:
@@ -232,8 +233,12 @@ def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments:
         raise RowError(msg)
     name_end = next_cells[:-3]
     unit_price_currency, net_currency, settled_time = next_cells[-3:]
-    if net_currency != "CZK":
-        msg = f"Částka is in {net_currency!r}, expected 'CZK'"
+    if net_currency != CZK:
+        msg = f"Částka is in {net_currency!r}, expected {CZK!r}"
+        raise RowError(msg)
+    if unit_price_currency != net_currency:
+        # Units priced in another currency would be bought with a Conversion, which the statements don't show.
+        msg = f"Cena / kus is in {unit_price_currency!r}, expected {CZK!r} like Částka"
         raise RowError(msg)
 
     paid, paid_as_written = payments.claim(_date(ordered, "Datum pokynu"))
@@ -248,17 +253,16 @@ def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments:
         msg = f"Datum vypořádání {settled!r} {settled_time!r} is not a date and time like '31.12.2026' '23:59:59'"
         raise RowError(msg) from e
     purchase = Purchase(
-        platform="investika",
-        portfolio_id=portfolio,
+        # A Portfolio per contract, named by its number.
+        portfolio=Portfolio(Platform.INVESTIKA, key=portfolio, name=portfolio),
+        fund=Fund(isin, " ".join([name_start, *name_end])),
         source_row_id=settled_at.isoformat(),
-        isin=isin,
-        fund_name=" ".join([name_start, *name_end]),
         # The month-end price the units were issued at; see docs/adr/0001-investika-trade-date-is-the-price-date.md.
-        trade_date=_date(price_date, "Datum ceny"),
+        day=_date(price_date, "Datum ceny"),
         units=_decimal(units, "Počet kusů"),
         unit_price=_decimal(unit_price, "Cena / kus"),
-        unit_price_currency=unit_price_currency,
-        czk=net_amount,
+        currency=unit_price_currency,
+        amount=net_amount,
     )
     # The Fee is the payment less what bought units: the entry fee and the rounding.
     return purchase, paid - net_amount

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -8,15 +9,25 @@ from test_chart import page
 
 from inflation_station import portu
 from inflation_station.cli import main
-from inflation_station.ledger import BUY, DEPOSIT, FEE, FOREX_BUY, FOREX_SELL, SELL
-from inflation_station.store import Store
-from inflation_station.valuation import NO_PRICES, Holding, Portfolio, timeline
+from inflation_station.domain import Fund, Platform, Portfolio, Purchase
+from inflation_station.store import Store, database_exists
+from inflation_station.valuation import NO_PRICES, Holding, timeline
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPORT = FIXTURES / "portu_export.csv"
 JT_EXPORT = FIXTURES / "jt_export.csv"
 PORTFOLIO = "Moje portfolio"
+MOJE = Portfolio(Platform.PORTU, PORTFOLIO, PORTFOLIO)
 SXR7, ZPRS, CSPX = "IE00B53QG562", "IE00BCBJG560", "IE00B5BMR087"
+# What importing the fixture reports the first time, and again.
+ADDED = (
+    "2 Deposits added, 0 already present.\n4 Purchases added, 0 already present.\n1 Sales added, 0 already present.\n"
+    "1 Fees added, 0 already present.\n5 Conversions added, 0 already present.\n"
+)
+PRESENT = (
+    "0 Deposits added, 2 already present.\n0 Purchases added, 4 already present.\n0 Sales added, 1 already present.\n"
+    "0 Fees added, 1 already present.\n0 Conversions added, 5 already present.\n"
+)
 
 
 def run(*args: str | Path) -> tuple[int, str, str]:
@@ -35,14 +46,14 @@ def write(path: Path, lines: list[str]) -> Path:
     return path
 
 
-def test_import_reports_ledger_entries_added(tmp_path: Path) -> None:
-    assert run("--data-dir", tmp_path, "import", EXPORT) == (0, "18 ledger entries added, 0 already present.\n", "")
+def test_import_reports_rows_added_by_kind(tmp_path: Path) -> None:
+    assert run("--data-dir", tmp_path, "import", EXPORT) == (0, ADDED, "")
 
 
 def test_reimporting_the_same_export_adds_nothing(tmp_path: Path) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
 
-    assert run("--data-dir", tmp_path, "import", EXPORT) == (0, "0 ledger entries added, 18 already present.\n", "")
+    assert run("--data-dir", tmp_path, "import", EXPORT) == (0, PRESENT, "")
 
 
 def test_a_later_full_history_export_adds_only_the_new_rows(tmp_path: Path) -> None:
@@ -50,7 +61,15 @@ def test_a_later_full_history_export_adds_only_the_new_rows(tmp_path: Path) -> N
     earlier = write(tmp_path / "earlier.csv", rows()[:1] + rows()[5:])
     run("--data-dir", tmp_path, "import", earlier)
 
-    assert run("--data-dir", tmp_path, "import", EXPORT) == (0, "4 ledger entries added, 14 already present.\n", "")
+    assert run("--data-dir", tmp_path, "import", EXPORT) == (
+        0,
+        (
+            "1 Deposits added, 1 already present.\n0 Purchases added, 4 already present.\n"
+            "1 Sales added, 0 already present.\n0 Fees added, 1 already present.\n"
+            "1 Conversions added, 4 already present.\n"
+        ),
+        "",
+    )
 
 
 def test_an_exact_repeat_is_its_own_row(tmp_path: Path) -> None:
@@ -61,46 +80,89 @@ def test_an_exact_repeat_is_its_own_row(tmp_path: Path) -> None:
         "--data-dir", tmp_path, "import", write(tmp_path / "once.csv", lines[:repeated_buy] + lines[repeated_buy + 1 :])
     )
 
-    assert run("--data-dir", tmp_path, "import", EXPORT) == (0, "1 ledger entries added, 17 already present.\n", "")
-    assert sum(e.units for e in Store(tmp_path).ledger() if e.isin == ZPRS) == Decimal("0.7500")
+    assert run("--data-dir", tmp_path, "import", EXPORT)[1].startswith(
+        "0 Deposits added, 2 already present.\n1 Purchases added, 3 already present.\n"
+    )
+    stored = Store(tmp_path).rows()
+    assert sum(p.units for p in stored.purchases if p.fund.isin == ZPRS) == Decimal("1.0000")
 
 
 def test_the_portfolio_is_its_name_so_a_renamed_portfolio_is_a_new_portfolio(tmp_path: Path) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
     renamed = write(tmp_path / "renamed.csv", [line.replace(f";{PORTFOLIO};", ";Důchod;") for line in rows()])
 
-    assert run("--data-dir", tmp_path, "import", renamed) == (0, "18 ledger entries added, 0 already present.\n", "")
-    assert {(e.platform, e.portfolio_id) for e in Store(tmp_path).ledger()} == {
-        ("portu", PORTFOLIO),
-        ("portu", "Důchod"),
+    assert run("--data-dir", tmp_path, "import", renamed) == (0, ADDED, "")
+    assert {d.portfolio for d in Store(tmp_path).rows().deposits} == {
+        MOJE,
+        Portfolio(Platform.PORTU, "Důchod", "Důchod"),
     }
 
 
-def test_rows_are_read_by_type(tmp_path: Path) -> None:
-    run("--data-dir", tmp_path, "import", EXPORT)
+def test_rows_are_read_by_type_with_amounts_unsigned() -> None:
+    read = portu.read_export(EXPORT)
 
-    entries = sorted(Store(tmp_path).ledger(), key=lambda e: (e.day, e.source_row_id))
-    assert [(e.day, e.kind, e.amount, e.currency) for e in entries if e.kind in {DEPOSIT, FEE}] == [
-        (date(2021, 3, 1), DEPOSIT, Decimal("10000.00"), "CZK"),
-        (date(2021, 4, 1), FEE, Decimal("-25.00"), "CZK"),
-        (date(2021, 5, 3), DEPOSIT, Decimal("5000.00"), "CZK"),
+    assert [(d.day, d.amount, d.currency) for d in read.deposits] == [
+        (date(2021, 3, 1), Decimal("10000.00"), "CZK"),
+        (date(2021, 5, 3), Decimal("5000.00"), "CZK"),
     ]
-    assert [
-        (e.day, e.kind, e.isin, e.fund_name, e.units, e.unit_price, e.amount, e.currency)
-        for e in entries
-        if e.isin == ZPRS
-    ] == [
-        (date(2021, 3, 3), BUY, ZPRS, "ZPRS GY", Decimal("0.5000"), Decimal("80.0000"), Decimal("-40.00"), "EUR"),
-        (date(2021, 3, 3), BUY, ZPRS, "ZPRS GY", Decimal("0.5000"), Decimal("80.0000"), Decimal("-40.00"), "EUR"),
-        (date(2021, 4, 15), SELL, ZPRS, "ZPRS GY", Decimal("-0.2500"), Decimal("84.0000"), Decimal("21.00"), "EUR"),
+    assert [(f.day, f.amount, f.currency) for f in read.fees] == [(date(2021, 4, 1), Decimal("25.00"), "CZK")]
+    zprs = Fund(ZPRS, "ZPRS GY")
+    bought = Purchase(
+        MOJE,
+        zprs,
+        "2021-03-03;Nákup;ZPRS GY;-40.00;EUR;1",
+        date(2021, 3, 3),
+        Decimal("0.5000"),
+        Decimal("80.0000"),
+        "EUR",
+        Decimal("40.00"),
+    )
+    # The exact repeat is told apart by its count.
+    assert [p for p in read.purchases if p.fund == zprs] == [
+        bought,
+        replace(bought, source_row_id=bought.source_row_id[:-1] + "2"),
     ]
-    forex = [(e.day, e.kind, e.amount, e.currency) for e in entries if e.kind in {FOREX_BUY, FOREX_SELL}]
-    assert sorted(forex)[:2] == [
-        (date(2021, 3, 2), FOREX_BUY, Decimal("100.00"), "USD"),
-        (date(2021, 3, 2), FOREX_BUY, Decimal("200.00"), "EUR"),
+    assert [(s.day, s.fund, s.units, s.unit_price, s.amount, s.currency) for s in read.sales] == [
+        (date(2021, 4, 15), zprs, Decimal("0.2500"), Decimal("84.0000"), Decimal("21.00"), "EUR")
     ]
-    assert len(forex) == 10  # noqa: PLR2004 - the fixture's forex rows
-    assert all((e.isin, e.units, e.unit_price) == ("", Decimal(0), None) for e in entries if e.kind not in {BUY, SELL})
+
+
+def test_forex_legs_pair_into_conversions_by_day_and_currency_pair_or_detail() -> None:
+    conversions = portu.read_export(EXPORT).conversions
+
+    assert [(c.day, c.from_amount, c.from_currency, c.to_amount, c.to_currency) for c in conversions] == [
+        # "CZK/USD" sold with "USD/CZK" bought, "CZK/EUR" with "EUR/CZK": two Conversions on one day.
+        (date(2021, 3, 2), Decimal("5200.00"), "CZK", Decimal("200.00"), "EUR"),
+        (date(2021, 3, 2), Decimal("2200.00"), "CZK", Decimal("100.00"), "USD"),
+        # A swap's legs share their detail, each day's pair a Conversion of its own.
+        (date(2021, 3, 17), Decimal("50.00"), "USD", Decimal("1100.00"), "CZK"),
+        (date(2021, 3, 18), Decimal("1105.00"), "CZK", Decimal("50.00"), "USD"),
+        (date(2021, 4, 15), Decimal("21.00"), "EUR", Decimal("546.00"), "CZK"),
+    ]
+    # Identified by its sell leg's row.
+    assert conversions[-1].source_row_id == "2021-04-15;Forex prodej;;-21.00;EUR;1"
+
+
+def test_a_forex_leg_without_exactly_one_other_fails_naming_its_row_and_imports_nothing(tmp_path: Path) -> None:
+    lines = rows()
+    # The EUR bought on 2 Mar, moved to the next day: neither leg has its other any more.
+    moved = next(
+        n
+        for n, line in enumerate(lines)
+        if line.startswith(f"02.03.2021;{PORTFOLIO};Forex nákup{portu.TYPE_SEPARATOR}EUR/CZK")
+    )
+    lines[moved] = lines[moved].replace("02.03.2021", "03.03.2021")
+    export = write(tmp_path / "unpaired.csv", lines)
+
+    assert run("--data-dir", tmp_path, "import", export) == (
+        1,
+        "",
+        (
+            "Error: unpaired.csv row 18: cannot pair the Forex prodej 'CZK/EUR' into a Conversion: that day the "
+            "Portfolio has 1 Forex prodej and 0 Forex nákup rows with this detail, expected one of each\n"
+        ),
+    )
+    assert not database_exists(tmp_path)
 
 
 def test_unknown_row_type_fails_naming_it_and_imports_nothing(tmp_path: Path) -> None:
@@ -113,9 +175,7 @@ def test_unknown_row_type_fails_naming_it_and_imports_nothing(tmp_path: Path) ->
         "",
         "Error: dividend.csv row 3: unknown type 'Dividenda'\n",
     )
-    assert run("--data-dir", tmp_path, "import", JT_EXPORT)[1] == (
-        "7 Purchases added, 0 already present.\n7 Fees added, 0 already present.\n"
-    )
+    assert run("--data-dir", tmp_path, "import", JT_EXPORT)[1].startswith("7 Purchases added, 0 already present.\n")
 
 
 @pytest.mark.parametrize(
@@ -138,6 +198,16 @@ def test_unknown_row_type_fails_naming_it_and_imports_nothing(tmp_path: Path) ->
             ";5\u00a0000,00;EUR;",
             "portu_export.csv row 2: a Vklad z bankovního účtu row is in 'EUR', expected 'CZK'",
         ),
+        (
+            ";5\u00a0000,00;CZK;",
+            ";5\u00a0000,00;Kč;",
+            "portu_export.csv row 2: Měna 'Kč' is not an ISO 4217 currency code",
+        ),
+        (
+            ";-25,00;",
+            ";25,00;",
+            "portu_export.csv row 6: a Poplatek row's Hodnota '25,00' is positive",
+        ),
         ("Kusy / Pozice", "Kusy", "portu_export.csv is not a Portu export: missing columns Kusy / Pozice"),
     ],
 )
@@ -152,16 +222,16 @@ def test_portu_and_jt_exports_import_together(tmp_path: Path) -> None:
     assert run("--data-dir", tmp_path, "import", JT_EXPORT, EXPORT) == (
         0,
         (
-            "7 Purchases added, 0 already present.\n"
-            "7 Fees added, 0 already present.\n"
-            "18 ledger entries added, 0 already present.\n"
+            "2 Deposits added, 0 already present.\n11 Purchases added, 0 already present.\n"
+            "1 Sales added, 0 already present.\n8 Fees added, 0 already present.\n"
+            "8 Conversions added, 0 already present.\n"
         ),
         "",
     )
 
 
 def test_cash_replays_to_the_exports_final_balances() -> None:
-    t = timeline([], ledger=portu.read_export(EXPORT), today=date(2021, 5, 3))
+    t = timeline(portu.read_export(EXPORT), today=date(2021, 5, 3))
 
     assert {currency: cash[-1] for currency, cash in t.cash.items()} == {
         "CZK": Decimal("8116.00"),
@@ -173,21 +243,19 @@ def test_cash_replays_to_the_exports_final_balances() -> None:
 
 
 def test_units_held_go_up_on_buys_and_down_on_sells() -> None:
-    t = timeline([], ledger=portu.read_export(EXPORT), today=date(2021, 5, 3))
+    t = timeline(portu.read_export(EXPORT), today=date(2021, 5, 3))
 
     assert {holding.isin: units[-1] for holding, units in t.units_held.items()} == {
         CSPX: Decimal("0.2500"),
         SXR7: Decimal("1.0000"),
         ZPRS: Decimal("0.7500"),
     }
-    assert {holding.portfolio for holding in t.units_held} == {Portfolio("portu", PORTFOLIO)}
-    assert t.units_held[Holding(Portfolio("portu", PORTFOLIO), ZPRS)][t.dates.index(date(2021, 4, 14))] == Decimal(
-        "1.0000"
-    )
+    assert {holding.portfolio for holding in t.units_held} == {MOJE}
+    assert t.units_held[Holding(MOJE, Fund(ZPRS, "ZPRS GY"))][t.dates.index(date(2021, 4, 14))] == Decimal("1.0000")
 
 
 def test_the_deposits_are_the_amount_invested() -> None:
-    t = timeline([], ledger=portu.read_export(EXPORT), today=date(2021, 5, 3))
+    t = timeline(portu.read_export(EXPORT), today=date(2021, 5, 3))
 
     assert t.dates[0] == date(2021, 3, 1)
     assert t.amount_invested[0] == t.amount_invested[-2] == Decimal("10000.00")
