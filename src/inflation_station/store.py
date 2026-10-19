@@ -133,7 +133,7 @@ class DepositRecord(_ImportedRow):
     currency: Mapped[str]
 
 
-class _TradeRow(_ImportedRow):
+class _PurchaseOrSaleRow(_ImportedRow):
     __abstract__ = True
 
     fund_id: Mapped[int] = mapped_column(ForeignKey("fund.id"))
@@ -143,12 +143,12 @@ class _TradeRow(_ImportedRow):
     currency: Mapped[str]
 
 
-class PurchaseRecord(_TradeRow):
+class PurchaseRecord(_PurchaseOrSaleRow):
     __tablename__ = "purchase"
     __table_args__ = _imported_row_args("currency")
 
 
-class SaleRecord(_TradeRow):
+class SaleRecord(_PurchaseOrSaleRow):
     __tablename__ = "sale"
     __table_args__ = _imported_row_args("currency")
 
@@ -286,7 +286,7 @@ class Store:
                     added += 1
                 return Added(added=added, already_present=already_present)
 
-            def trade(record: type[_TradeRow]) -> Callable[[Purchase | Sale], _TradeRow]:
+            def purchase_or_sale(record: type[_PurchaseOrSaleRow]) -> Callable[[Purchase | Sale], _PurchaseOrSaleRow]:
                 return lambda t: record(
                     portfolio_id=portfolio_ids[_portfolio_key(t.portfolio)],
                     fund_id=fund_ids[t.fund.isin],
@@ -310,8 +310,8 @@ class Store:
                         currency=d.currency,
                     ),
                 ),
-                "Purchases": add(PurchaseRecord, rows.purchases, trade(PurchaseRecord)),
-                "Sales": add(SaleRecord, rows.sales, trade(SaleRecord)),
+                "Purchases": add(PurchaseRecord, rows.purchases, purchase_or_sale(PurchaseRecord)),
+                "Sales": add(SaleRecord, rows.sales, purchase_or_sale(SaleRecord)),
                 "Fees": add(
                     FeeRecord,
                     rows.fees,
@@ -422,9 +422,9 @@ class Store:
             }
             funds = {r.id: Fund(r.isin, r.name) for r in session.scalars(select(FundRecord))}
 
-            def trades[T: (Purchase, Sale)](record: type[_TradeRow], trade: type[T]) -> list[T]:
+            def purchases_or_sales[T: (Purchase, Sale)](record: type[_PurchaseOrSaleRow], kind: type[T]) -> list[T]:
                 return [
-                    trade(
+                    kind(
                         portfolio=portfolios[r.portfolio_id],
                         fund=funds[r.fund_id],
                         source_row_id=r.source_row_id,
@@ -442,8 +442,8 @@ class Store:
                     Deposit(portfolios[r.portfolio_id], r.source_row_id, r.day, r.amount, r.currency)
                     for r in session.scalars(select(DepositRecord).order_by(DepositRecord.id))
                 ],
-                purchases=trades(PurchaseRecord, Purchase),
-                sales=trades(SaleRecord, Sale),
+                purchases=purchases_or_sales(PurchaseRecord, Purchase),
+                sales=purchases_or_sales(SaleRecord, Sale),
                 fees=[
                     Fee(portfolios[r.portfolio_id], r.source_row_id, r.day, r.amount, r.currency)
                     for r in session.scalars(select(FeeRecord).order_by(FeeRecord.id))

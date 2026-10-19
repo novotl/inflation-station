@@ -1,5 +1,8 @@
 """Currency codes: the ISO 4217 list, so a typo or a column mix-up in an export or a download is never a currency."""
 
+# The currency amounts are valued in.
+CZK = "CZK"
+
 # Every active ISO 4217 code, including funds codes (e.g. CLF) and the X codes (precious metals, SDR, XXX).
 CODES = frozenset(
     """

@@ -5,6 +5,7 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 from inflation_station import czech
+from inflation_station.currency import CZK
 from inflation_station.currency import code as currency_code
 from inflation_station.domain import CONVERSION_SUFFIX, Conversion, Fee, Fund, Platform, Portfolio, Purchase, Rows
 from inflation_station.errors import InflationStationError
@@ -13,7 +14,6 @@ if TYPE_CHECKING:
     from decimal import Decimal
     from pathlib import Path
 
-CZK = "CZK"
 PURCHASE_MOVEMENT = "Investice klienta (vklad)"
 CASH_DEPOSIT_PREFIX = "Vklad"
 

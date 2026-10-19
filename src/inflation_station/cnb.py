@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from inflation_station import web
+from inflation_station.currency import CZK
 from inflation_station.currency import code as currency_code
 from inflation_station.errors import InflationStationError
 from inflation_station.fx_rate import FxRate
@@ -13,7 +14,6 @@ from inflation_station.fx_rate import FxRate
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-CZK = "CZK"
 MONTH_URL = "https://api.cnb.cz/cnbapi/exrates/daily-currency-month?currency={currency}&yearMonth={month}&lang=EN"
 
 

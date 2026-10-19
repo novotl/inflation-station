@@ -11,6 +11,7 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 from inflation_station import czech
+from inflation_station.currency import CZK
 from inflation_station.currency import code as currency_code
 from inflation_station.domain import Conversion, Deposit, Fee, Fund, Platform, Portfolio, Purchase, Rows, Sale
 from inflation_station.errors import InflationStationError
@@ -130,8 +131,8 @@ def _row(line_num: int, row: dict[str, str], occurrences: Counter[tuple[str, ...
     except ValueError as e:
         msg = f"{CURRENCY} {e}"
         raise RowError(msg) from e
-    if row_type == DEPOSIT and currency != "CZK":
-        msg = f"a {row_type} row is in {currency!r}, expected 'CZK'"
+    if row_type == DEPOSIT and currency != CZK:
+        msg = f"a {row_type} row is in {currency!r}, expected {CZK!r}"
         raise RowError(msg)
     key = (day.isoformat(), row_type, row[SYMBOL], str(amount), currency)
     # Counted per Portfolio, so one Portfolio's rows never shift another's count.

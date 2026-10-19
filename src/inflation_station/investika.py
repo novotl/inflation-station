@@ -14,6 +14,7 @@ from pypdf import PdfReader
 from pypdf.errors import PyPdfError
 
 from inflation_station import czech
+from inflation_station.currency import CZK
 from inflation_station.domain import Fee, Fund, Platform, Portfolio, Purchase, Rows
 from inflation_station.errors import InflationStationError
 
@@ -27,7 +28,6 @@ HOLDINGS = "Transakce na majetkovém účtu"
 KIND_NAMES = {CASH: "cash", HOLDINGS: "holdings"}
 CONTRACT = "Číslo smlouvy"
 
-CZK = "CZK"
 
 # Cash statement rows.
 PAYMENT = "Odchozí platba z VÚ na investici"

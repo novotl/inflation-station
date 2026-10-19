@@ -133,8 +133,8 @@ class Rows:
 
     def funds(self) -> dict[str, Fund]:
         """Every Fund bought or sold, by ISIN, sorted by ISIN, named as in its latest Purchase or Sale."""
-        trades = sorted([*self.purchases, *self.sales], key=lambda t: t.day)
-        return dict(sorted({t.fund.isin: t.fund for t in trades}.items()))
+        bought_or_sold = sorted([*self.purchases, *self.sales], key=lambda t: t.day)
+        return dict(sorted({t.fund.isin: t.fund for t in bought_or_sold}.items()))
 
     def first_days(self) -> dict[str, date]:
         """The day of the first row in each currency, by currency, sorted by currency."""

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 MAX_DIFFERENCE = Decimal("0.005")
 
 
-class _Trade(NamedTuple):
+class _PurchaseOrSale(NamedTuple):
     day: date
     isin: str
     done: str  # "bought" or "sold"
@@ -35,10 +35,10 @@ def price_warnings(
     MAX_DIFFERENCE from, the stored price on its date. `fund_names` and `sources` must cover every fund bought or sold.
     """
     by_day = {(p.isin, p.day): p for p in prices}
-    trades = [_Trade(p.day, p.fund.isin, "bought", p.unit_price, p.currency) for p in rows.purchases]
-    trades += [_Trade(s.day, s.fund.isin, "sold", s.unit_price, s.currency) for s in rows.sales]
+    bought_or_sold = [_PurchaseOrSale(p.day, p.fund.isin, "bought", p.unit_price, p.currency) for p in rows.purchases]
+    bought_or_sold += [_PurchaseOrSale(s.day, s.fund.isin, "sold", s.unit_price, s.currency) for s in rows.sales]
     warnings = []
-    for day, isin, done, unit_price, currency in sorted(trades, key=lambda t: (t.day, t.isin)):
+    for day, isin, done, unit_price, currency in sorted(bought_or_sold, key=lambda t: (t.day, t.isin)):
         stored = by_day.get((isin, day))
         if stored is None:
             continue

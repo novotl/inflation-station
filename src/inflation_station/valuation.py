@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, NamedTuple
 
+from inflation_station.currency import CZK
 from inflation_station.domain import CONVERSION_SUFFIX
 
 if TYPE_CHECKING:
@@ -21,7 +22,6 @@ if TYPE_CHECKING:
     from inflation_station.fx_rate import FxRate
     from inflation_station.price_index import IndexLevel
 
-CZK = "CZK"
 NO_PRICES = "no prices stored"
 
 
@@ -138,8 +138,8 @@ def timeline(
 
     funds = rows.funds()
     deposited = {d.portfolio for d in rows.deposits}
-    trades = [*rows.purchases, *rows.sales]
-    holdings = sorted({Holding(t.portfolio, funds[t.fund.isin]) for t in trades}, key=_holding_order)
+    bought_or_sold = [*rows.purchases, *rows.sales]
+    holdings = sorted({Holding(t.portfolio, funds[t.fund.isin]) for t in bought_or_sold}, key=_holding_order)
     units_held = {
         h: _running_total(
             dates,
@@ -165,7 +165,7 @@ def timeline(
         if currencies:
             priced_in[isin] = ", ".join(currencies)
         else:
-            priced_in[isin] = max((t for t in trades if t.fund.isin == isin), key=lambda t: t.day).currency
+            priced_in[isin] = max((t for t in bought_or_sold if t.fund.isin == isin), key=lambda t: t.day).currency
         if not fund_prices:
             not_valued[isin] = NO_PRICES
         elif len(currencies) > 1:
@@ -190,7 +190,7 @@ def timeline(
     levels_by_series = {
         series: [i for i in index_levels if i.series == series] for series in sorted({i.series for i in index_levels})
     }
-    every_portfolio = {r.portfolio for r in [*rows.deposits, *trades, *rows.fees, *rows.conversions]}
+    every_portfolio = {r.portfolio for r in [*rows.deposits, *bought_or_sold, *rows.fees, *rows.conversions]}
     invested_in = {
         a: [(d.day, d.amount) for d in rows.deposits if d.portfolio == a] if a in deposited else _paid_in_czk(rows, a)
         for a in sorted(every_portfolio, key=_portfolio_order)
@@ -244,9 +244,9 @@ def _holding_order(holding: Holding) -> tuple[str, str, str]:
     return (*_portfolio_order(holding.portfolio), holding.isin)
 
 
-def _is_in(trade: Purchase | Sale, holding: Holding) -> bool:
+def _is_in(row: Purchase | Sale, holding: Holding) -> bool:
     """Whether a Purchase or Sale is of a Holding, whatever its Fund was named in it."""
-    return (trade.portfolio, trade.fund.isin) == (holding.portfolio, holding.isin)
+    return (row.portfolio, row.fund.isin) == (holding.portfolio, holding.isin)
 
 
 class _CashMove(NamedTuple):
