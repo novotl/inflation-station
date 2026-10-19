@@ -10,12 +10,12 @@ from inflation_station import portu
 from inflation_station.cli import main
 from inflation_station.ledger import BUY, DEPOSIT, FEE, FOREX_BUY, FOREX_SELL, SELL
 from inflation_station.store import Store
-from inflation_station.valuation import NO_PRICES, Account, Holding, timeline
+from inflation_station.valuation import NO_PRICES, Holding, Portfolio, timeline
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPORT = FIXTURES / "portu_export.csv"
 JT_EXPORT = FIXTURES / "jt_export.csv"
-ACCOUNT = "Moje portfolio"
+PORTFOLIO = "Moje portfolio"
 SXR7, ZPRS, CSPX = "IE00B53QG562", "IE00BCBJG560", "IE00B5BMR087"
 
 
@@ -65,12 +65,15 @@ def test_an_exact_repeat_is_its_own_row(tmp_path: Path) -> None:
     assert sum(e.units for e in Store(tmp_path).ledger() if e.isin == ZPRS) == Decimal("0.7500")
 
 
-def test_the_account_is_the_portfolio_name_so_a_renamed_portfolio_is_a_new_account(tmp_path: Path) -> None:
+def test_the_portfolio_is_its_name_so_a_renamed_portfolio_is_a_new_portfolio(tmp_path: Path) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
-    renamed = write(tmp_path / "renamed.csv", [line.replace(f";{ACCOUNT};", ";Důchod;") for line in rows()])
+    renamed = write(tmp_path / "renamed.csv", [line.replace(f";{PORTFOLIO};", ";Důchod;") for line in rows()])
 
     assert run("--data-dir", tmp_path, "import", renamed) == (0, "18 ledger entries added, 0 already present.\n", "")
-    assert {(e.platform, e.account_id) for e in Store(tmp_path).ledger()} == {("portu", ACCOUNT), ("portu", "Důchod")}
+    assert {(e.platform, e.portfolio_id) for e in Store(tmp_path).ledger()} == {
+        ("portu", PORTFOLIO),
+        ("portu", "Důchod"),
+    }
 
 
 def test_rows_are_read_by_type(tmp_path: Path) -> None:
@@ -102,7 +105,7 @@ def test_rows_are_read_by_type(tmp_path: Path) -> None:
 
 def test_unknown_row_type_fails_naming_it_and_imports_nothing(tmp_path: Path) -> None:
     lines = rows()
-    dividend = f"10.04.2021;{ACCOUNT};Dividenda{portu.TYPE_SEPARATOR}CSPX LN;CSPX LN;{CSPX};;;;1,20;USD;0,18;1,38\n"
+    dividend = f"10.04.2021;{PORTFOLIO};Dividenda{portu.TYPE_SEPARATOR}CSPX LN;CSPX LN;{CSPX};;;;1,20;USD;0,18;1,38\n"
     export = write(tmp_path / "dividend.csv", [lines[0], lines[1], dividend, *lines[2:]])
 
     assert run("--data-dir", tmp_path, "import", JT_EXPORT, export) == (
@@ -171,8 +174,10 @@ def test_units_held_go_up_on_buys_and_down_on_sells() -> None:
         SXR7: Decimal("1.0000"),
         ZPRS: Decimal("0.7500"),
     }
-    assert {holding.account for holding in t.units_held} == {Account("portu", ACCOUNT)}
-    assert t.units_held[Holding(Account("portu", ACCOUNT), ZPRS)][t.dates.index(date(2021, 4, 14))] == Decimal("1.0000")
+    assert {holding.portfolio for holding in t.units_held} == {Portfolio("portu", PORTFOLIO)}
+    assert t.units_held[Holding(Portfolio("portu", PORTFOLIO), ZPRS)][t.dates.index(date(2021, 4, 14))] == Decimal(
+        "1.0000"
+    )
 
 
 def test_the_deposits_are_the_amount_invested() -> None:
@@ -221,7 +226,7 @@ def test_the_chart_values_cash_and_stacks_it_under_the_funds(tmp_path: Path) -> 
         tmp_path / "eur_and_sxr7.csv",
         [
             *rows(eur_cash_export(tmp_path)),
-            f"03.05.2021;{ACCOUNT};Nákup{portu.TYPE_SEPARATOR}SXR7 GY;SXR7 GY;{SXR7};0,5000;;139,3400;-69,67;EUR;;\n",
+            f"03.05.2021;{PORTFOLIO};Nákup{portu.TYPE_SEPARATOR}SXR7 GY;SXR7 GY;{SXR7};0,5000;;139,3400;-69,67;EUR;;\n",
         ],
     )
     run("--data-dir", tmp_path, "import", export)
@@ -232,8 +237,8 @@ def test_the_chart_values_cash_and_stacks_it_under_the_funds(tmp_path: Path) -> 
     # On 1 Jul 2021, at ČNB's 25.505 CZK per EUR and SXR7's 30 Jun close of 143.72 EUR.
     cash = 2400 + (100 - 69.67) * 25.505
     sxr7 = 0.5 * 143.72 * 25.505
-    assert page(tmp_path)["portfolio"]["value"] == pytest.approx(cash + sxr7)
-    stacked = page(tmp_path)["portfolio"]["composition"]
+    assert page(tmp_path)["wholePortfolio"]["value"] == pytest.approx(cash + sxr7)
+    stacked = page(tmp_path)["wholePortfolio"]["composition"]
     assert [(t["name"], t.get("stackgroup")) for t in stacked] == [
         ("Cash", "value"),
         ("SXR7 GY", "value"),

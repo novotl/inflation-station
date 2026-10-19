@@ -14,7 +14,7 @@ FUND_NAME = "INVESTIKA realitní fond, otevřený podílový fond - Třída CZK"
 ISSUES = [
     Purchase(
         platform="investika",
-        account_id="1234567890",
+        portfolio_id="1234567890",
         source_row_id="2026-09-10T11:02:49",
         isin="CZ0008474830",
         fund_name=FUND_NAME,
@@ -28,7 +28,7 @@ ISSUES = [
     ),
     Purchase(
         platform="investika",
-        account_id="1234567890",
+        portfolio_id="1234567890",
         source_row_id="2021-05-10T16:21:05",
         isin="CZ0008474830",
         fund_name=FUND_NAME,
@@ -107,14 +107,14 @@ def test_unknown_cash_transaction_type_fails() -> None:
     )
 
 
-def test_mismatched_contract_numbers_fail() -> None:
+def test_statements_of_different_portfolios_fail() -> None:
     fails(
         "cash.txt",
         "holdings_other_contract.txt",
         error=(
             "INVESTIKA statements come in pairs with the same Číslo smlouvy: "
-            "contract 1234567890 has a cash statement (cash.txt) but no holdings statement; "
-            "contract 9876543210 has a holdings statement (holdings_other_contract.txt) but no cash statement"
+            "Portfolio 1234567890 has a cash statement (cash.txt) but no holdings statement; "
+            "Portfolio 9876543210 has a holdings statement (holdings_other_contract.txt) but no cash statement"
         ),
     )
 
@@ -122,22 +122,22 @@ def test_mismatched_contract_numbers_fail() -> None:
 @pytest.mark.parametrize(
     ("fixture", "error"),
     [
-        ("cash.txt", "contract 1234567890 has a cash statement (cash.txt) but no holdings statement"),
-        ("holdings.txt", "contract 1234567890 has a holdings statement (holdings.txt) but no cash statement"),
+        ("cash.txt", "Portfolio 1234567890 has a cash statement (cash.txt) but no holdings statement"),
+        ("holdings.txt", "Portfolio 1234567890 has a holdings statement (holdings.txt) but no cash statement"),
     ],
 )
 def test_only_one_statement_of_the_pair_fails(fixture: str, error: str) -> None:
     fails(fixture, error=f"INVESTIKA statements come in pairs with the same Číslo smlouvy: {error}")
 
 
-def test_two_statements_of_one_kind_for_a_contract_fail() -> None:
+def test_two_statements_of_one_kind_for_a_portfolio_fail() -> None:
     fails(
         "cash.txt",
         "cash_pending_payment.txt",
         "holdings.txt",
         error=(
             "INVESTIKA statements come in pairs with the same Číslo smlouvy: "
-            "contract 1234567890 has 2 cash statements (cash.txt, cash_pending_payment.txt)"
+            "Portfolio 1234567890 has 2 cash statements (cash.txt, cash_pending_payment.txt)"
         ),
     )
 
@@ -254,7 +254,7 @@ def test_lines_without_a_title_are_not_a_statement() -> None:
         investika.statement("x.pdf", ["", "  Something else", "Číslo smlouvy:", "1"])
 
 
-def test_statement_without_a_contract_number_fails() -> None:
+def test_statement_without_a_portfolio_number_fails() -> None:
     with pytest.raises(InflationStationError, match=re.escape("x.pdf has no Číslo smlouvy")):
         investika.statement("x.pdf", ["  Pohyby na peněžním účtu", ""])
 

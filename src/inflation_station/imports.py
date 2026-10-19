@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
 
+    from inflation_station.fee import Fee
     from inflation_station.ledger import LedgerEntry
     from inflation_station.purchase import Purchase
 
@@ -18,9 +19,11 @@ PDF_SIGNATURE = b"%PDF-"
 
 @dataclass(frozen=True)
 class Imported:
-    """What a set of exports holds: Purchases from Platforms where you pick the funds, and Managed Accounts' ledgers."""
+    """What a set of exports holds: Purchases from Platforms where you pick the funds and the Fees charged on them,
+    and Managed Portfolios' ledgers."""
 
     purchases: list[Purchase]
+    fees: list[Fee]
     ledger: list[LedgerEntry]
 
 
@@ -36,7 +39,8 @@ def read_files(paths: Iterable[Path]) -> Imported:
             ledger.extend(portu.read_export(path))
         else:
             purchases.extend(jt.read_export(path))
-    return Imported(purchases=purchases + investika.purchases(statements), ledger=ledger)
+    # No export's Fees are read yet.
+    return Imported(purchases=purchases + investika.purchases(statements), fees=[], ledger=ledger)
 
 
 def _is_pdf(path: Path) -> bool:

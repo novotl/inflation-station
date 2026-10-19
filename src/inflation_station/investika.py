@@ -1,4 +1,4 @@
-"""Reads INVESTIKA's PDF statements, which come in pairs per contract (Číslo smlouvy).
+"""Reads INVESTIKA's PDF statements, which come in pairs per Portfolio: a contract, numbered by its Číslo smlouvy.
 
 The cash statement lists the money paid in; the holdings statement lists the units issued for it. Their text, extracted
 with the layout kept, has one table row per line (two for a holdings row, whose fund name wraps), its columns separated
@@ -52,7 +52,7 @@ class Statement:
 
     name: str
     title: str
-    contract: str
+    portfolio: str
     lines: list[str]
 
 
@@ -85,11 +85,11 @@ def statement(name: str, lines: list[str]) -> Statement:
     if title not in KIND_NAMES:
         msg = f"{name} is not an INVESTIKA statement: its title is neither {CASH!r} nor {HOLDINGS!r}"
         raise InflationStationError(msg)
-    return Statement(name=name, title=title, contract=_contract(name, lines), lines=lines)
+    return Statement(name=name, title=title, portfolio=_portfolio(name, lines), lines=lines)
 
 
-def _contract(name: str, lines: list[str]) -> str:
-    """The contract number, on the line after its label."""
+def _portfolio(name: str, lines: list[str]) -> str:
+    """The Portfolio's contract number, on the line after its label."""
     stripped = [line.strip() for line in lines]
     for i, line in enumerate(stripped):
         if line == f"{CONTRACT}:":
@@ -101,14 +101,14 @@ def _contract(name: str, lines: list[str]) -> str:
 
 
 def purchases(statements: Iterable[Statement]) -> list[Purchase]:
-    """One Purchase per issue of units, from statements that pair up by contract. Raises on anything unknown."""
+    """One Purchase per issue of units, from statements that pair up by Portfolio. Raises on anything unknown."""
     result = []
     for cash, holdings in _pairs(statements):
         payments = _Payments(cash)
         row_ids: set[str] = set()
         for cells, next_cells in _holdings_rows(holdings):
             try:
-                result.append(_claim_row_id(_purchase(holdings.contract, cells, next_cells, payments), row_ids))
+                result.append(_claim_row_id(_purchase(holdings.portfolio, cells, next_cells, payments), row_ids))
             except RowError as e:
                 msg = f"{holdings.name} row {cells[2]!r} ordered {cells[-1]}: {e}"
                 raise InflationStationError(msg) from e
@@ -116,26 +116,26 @@ def purchases(statements: Iterable[Statement]) -> list[Purchase]:
 
 
 def _pairs(statements: Iterable[Statement]) -> list[tuple[Statement, Statement]]:
-    """The (cash, holdings) statement of each contract; raises unless every contract has exactly one of each."""
-    by_contract: dict[str, dict[str, list[Statement]]] = {}
+    """The (cash, holdings) statement of each Portfolio; raises unless every Portfolio has exactly one of each."""
+    by_portfolio: dict[str, dict[str, list[Statement]]] = {}
     for s in statements:
-        by_contract.setdefault(s.contract, {CASH: [], HOLDINGS: []})[s.title].append(s)
+        by_portfolio.setdefault(s.portfolio, {CASH: [], HOLDINGS: []})[s.title].append(s)
     problems = []
-    for contract, kinds in by_contract.items():
+    for portfolio, kinds in by_portfolio.items():
         for title, other in ((CASH, HOLDINGS), (HOLDINGS, CASH)):
             found = kinds[title]
             names = ", ".join(s.name for s in found)
             if len(found) > 1:
-                problems.append(f"contract {contract} has {len(found)} {KIND_NAMES[title]} statements ({names})")
+                problems.append(f"Portfolio {portfolio} has {len(found)} {KIND_NAMES[title]} statements ({names})")
             elif found and not kinds[other]:
                 problems.append(
-                    f"contract {contract} has a {KIND_NAMES[title]} statement ({names}) "
+                    f"Portfolio {portfolio} has a {KIND_NAMES[title]} statement ({names}) "
                     f"but no {KIND_NAMES[other]} statement"
                 )
     if problems:
         msg = f"INVESTIKA statements come in pairs with the same {CONTRACT}: {'; '.join(problems)}"
         raise InflationStationError(msg)
-    return [(kinds[CASH][0], kinds[HOLDINGS][0]) for kinds in by_contract.values()]
+    return [(kinds[CASH][0], kinds[HOLDINGS][0]) for kinds in by_portfolio.values()]
 
 
 class _Payments:
@@ -206,7 +206,7 @@ def _holdings_rows(holdings: Statement) -> list[tuple[list[str], list[str]]]:
     ]
 
 
-def _purchase(contract: str, cells: list[str], next_cells: list[str], payments: _Payments) -> Purchase:
+def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments: _Payments) -> Purchase:
     """The Purchase in a holdings row, claiming the payment it was bought with."""
     if cells[2] != ISSUE:
         msg = "unknown transaction type"
@@ -240,7 +240,7 @@ def _purchase(contract: str, cells: list[str], next_cells: list[str], payments: 
         raise RowError(msg) from e
     return Purchase(
         platform="investika",
-        account_id=contract,
+        portfolio_id=portfolio,
         source_row_id=settled_at.isoformat(),
         isin=isin,
         fund_name=" ".join([name_start, *name_end]),
