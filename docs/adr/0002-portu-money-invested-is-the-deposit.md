@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0003
+---
+
 # Portu: the money invested is the Deposit, not the buys
 
 Portu is a Managed Account: you deposit CZK, and Portu converts it to EUR/USD, buys and sells ETFs to rebalance, hedges currency with swaps and forwards, and takes a monthly fee from cash. We count each Deposit as the money invested, with its inflation hurdle starting on the deposit date, and value the Account as its holdings at market prices plus its cash. Portu's buys and sells move units and cash inside the Account but are not Purchases.
