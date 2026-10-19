@@ -464,12 +464,12 @@ def test_without_prices_a_fund_is_priced_in_the_currency_it_was_bought_in(tmp_pa
 PORTU_EXPORT = Path(__file__).parent / "fixtures" / "portu_export.csv"
 
 
-def test_each_account_has_a_section_headed_by_its_platform_and_name_largest_value_first(tmp_path: Path) -> None:
+def test_each_portfolio_has_a_section_headed_by_its_platform_and_name_largest_value_first(tmp_path: Path) -> None:
     fetch_everything(tmp_path)
     run("--data-dir", tmp_path, "import", PORTU_EXPORT)
     run("--data-dir", tmp_path, "chart")
 
-    jt, portu = page(tmp_path)["accounts"]
+    jt, portu = page(tmp_path)["portfolios"]
     assert (jt["name"], jt["managed"], portu["name"], portu["managed"]) == (
         "J&T Banka · 900000001",
         False,
@@ -480,8 +480,8 @@ def test_each_account_has_a_section_headed_by_its_platform_and_name_largest_valu
     assert jt["invested"] == 235000  # noqa: PLR2004 - the fixture's seven Purchases
     assert jt["benchmarkHurdle"] == pytest.approx(hurdle_on_1_jul(CSU_MAY))
     assert [h["name"] for h in jt["hurdles"]] == ["ČSÚ CPI", "Eurostat HICP"]
-    # A Managed Account's money invested is its two Deposits. Its funds have no prices, so its value is its Cash: 8 116
-    # CZK, and no EUR.
+    # A Managed Portfolio's money invested is its two Deposits. Its funds have no prices, so its value is its
+    # Cash: 8 116 CZK, and no EUR.
     assert (portu["invested"], portu["value"], portu["notValued"]) == (15000, 8116, None)
     # It names what its value leaves out: its funds, and its Cash in currencies without rates.
     assert portu["leftOut"] == [
@@ -503,20 +503,20 @@ def test_each_account_has_a_section_headed_by_its_platform_and_name_largest_valu
     assert [t["name"] for t in jt["relative"]] == ["real", "nominal"]
 
 
-def test_each_fund_section_is_a_holding_naming_its_account(tmp_path: Path) -> None:
+def test_each_fund_section_is_a_holding_naming_its_portfolio(tmp_path: Path) -> None:
     fetch_everything(tmp_path)
     run("--data-dir", tmp_path, "chart")
 
-    assert {f["account"] for f in page(tmp_path)["funds"]} == {"J&T Banka · 900000001"}
+    assert {f["portfolio"] for f in page(tmp_path)["funds"]} == {"J&T Banka · 900000001"}
     assert len({f["key"] for f in page(tmp_path)["funds"]}) == 4  # noqa: PLR2004 - the fixture's funds
 
 
-def test_holdings_in_a_managed_account_show_units_but_no_amount_invested_or_hurdle(tmp_path: Path) -> None:
+def test_holdings_in_a_managed_portfolio_show_units_but_no_amount_invested_or_hurdle(tmp_path: Path) -> None:
     fetch_everything(tmp_path)
     run("--data-dir", tmp_path, "import", PORTU_EXPORT)
     run("--data-dir", tmp_path, "chart")
 
-    portu = [f for f in page(tmp_path)["funds"] if f["account"] == "Portu · Moje portfolio"]
+    portu = [f for f in page(tmp_path)["funds"] if f["portfolio"] == "Portu · Moje portfolio"]
     assert [(f["isin"], f["units"], f["managed"]) for f in portu] == [
         ("IE00B53QG562", "1", True),
         ("IE00B5BMR087", "0.25", True),
@@ -526,7 +526,7 @@ def test_holdings_in_a_managed_account_show_units_but_no_amount_invested_or_hurd
     assert all(f["chart"] == f["relative"] == [] for f in portu)
 
 
-def test_a_valued_holding_in_a_managed_account_charts_its_value_only(tmp_path: Path) -> None:
+def test_a_valued_holding_in_a_managed_portfolio_charts_its_value_only(tmp_path: Path) -> None:
     deposit = LedgerEntry(
         "portu", "Moje portfolio", "1", date(2021, 6, 13), DEPOSIT, "", "", Decimal(0), None, Decimal(500), "CZK"
     )
@@ -551,13 +551,13 @@ def test_a_valued_holding_in_a_managed_account_charts_its_value_only(tmp_path: P
     (holding,) = page(tmp_path)["funds"]
     assert [line["name"] for line in holding["chart"]] == ["Value"]
     assert hover(holding["chart"][0], -1) == "220.00 CZK · 2 units"
-    # The Account's value is its Holding plus its Cash: 300 CZK left of the Deposit.
-    assert page(tmp_path)["accounts"][0]["value"] == 520  # noqa: PLR2004
-    assert page(tmp_path)["accounts"][0]["leftOut"] == []
+    # The Portfolio's value is its Holding plus its Cash: 300 CZK left of the Deposit.
+    assert page(tmp_path)["portfolios"][0]["value"] == 520  # noqa: PLR2004
+    assert page(tmp_path)["portfolios"][0]["leftOut"] == []
 
 
 def ff_world(units: int) -> Purchase:
-    """A J&T Purchase of `units` FF World units at 10 CZK, in Account 900000001 on 13 Jun 2021."""
+    """A J&T Purchase of `units` FF World units at 10 CZK, in Portfolio 900000001 on 13 Jun 2021."""
     return Purchase(
         platform="jt",
         portfolio_id="900000001",
@@ -574,7 +574,7 @@ def ff_world(units: int) -> Purchase:
     )
 
 
-def test_one_fund_in_two_accounts_is_two_holdings_each_naming_its_account(tmp_path: Path) -> None:
+def test_one_fund_in_two_portfolios_is_two_holdings_each_naming_its_portfolio(tmp_path: Path) -> None:
     bought = ff_world(units=2)
     t = timeline(
         [bought, replace(bought, portfolio_id="900000002", units=Decimal(3), gross_czk=Decimal(30))],
@@ -584,7 +584,7 @@ def test_one_fund_in_two_accounts_is_two_holdings_each_naming_its_account(tmp_pa
     write_chart(t, tmp_path)
 
     funds = page(tmp_path)["funds"]
-    assert [(f["account"], f["value"], f["invested"]) for f in funds] == [
+    assert [(f["portfolio"], f["value"], f["invested"]) for f in funds] == [
         ("J&T Banka · 900000002", 30, 30),
         ("J&T Banka · 900000001", 20, 20),
     ]
@@ -596,7 +596,7 @@ def test_one_fund_in_two_accounts_is_two_holdings_each_naming_its_account(tmp_pa
     }
 
 
-def test_an_account_with_nothing_valued_says_whether_its_funds_or_its_cash_are_missing(tmp_path: Path) -> None:
+def test_an_portfolio_with_nothing_valued_says_whether_its_funds_or_its_cash_are_missing(tmp_path: Path) -> None:
     usd = LedgerEntry(
         "portu", "Cash only", "1", date(2021, 6, 13), DEPOSIT, "", "", Decimal(0), None, Decimal(100), "USD"
     )
@@ -613,7 +613,7 @@ def test_an_account_with_nothing_valued_says_whether_its_funds_or_its_cash_are_m
     bought = ff_world(units=1)
     write_chart(timeline([bought], ledger=[usd, buy], today=date(2021, 6, 13)), tmp_path)
 
-    assert {a["name"]: a["notValued"] for a in page(tmp_path)["accounts"]} == {
+    assert {a["name"]: a["notValued"] for a in page(tmp_path)["portfolios"]} == {
         "J&T Banka · 900000001": "none of its funds valued",
         "Portu · Cash only": "none of its Cash valued",
         "Portu · Moje portfolio": "none of its funds or Cash valued",
