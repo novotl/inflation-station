@@ -252,7 +252,7 @@ def test_pdf_that_is_not_an_investika_statement_fails(tmp_path: Path) -> None:
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", size=14)
-    pdf.text(15, 15, "Account statement")
+    pdf.text(15, 15, "Bank statement")
     pdf.output(str(other))
 
     assert run("--data-dir", tmp_path, "import", other) == (

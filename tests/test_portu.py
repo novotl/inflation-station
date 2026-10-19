@@ -10,7 +10,7 @@ from inflation_station import portu
 from inflation_station.cli import main
 from inflation_station.ledger import BUY, DEPOSIT, FEE, FOREX_BUY, FOREX_SELL, SELL
 from inflation_station.store import Store
-from inflation_station.valuation import NO_PRICES, Account, Holding, timeline
+from inflation_station.valuation import NO_PRICES, Holding, Portfolio, timeline
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPORT = FIXTURES / "portu_export.csv"
@@ -174,8 +174,8 @@ def test_units_held_go_up_on_buys_and_down_on_sells() -> None:
         SXR7: Decimal("1.0000"),
         ZPRS: Decimal("0.7500"),
     }
-    assert {holding.account for holding in t.units_held} == {Account("portu", PORTFOLIO)}
-    assert t.units_held[Holding(Account("portu", PORTFOLIO), ZPRS)][t.dates.index(date(2021, 4, 14))] == Decimal(
+    assert {holding.portfolio for holding in t.units_held} == {Portfolio("portu", PORTFOLIO)}
+    assert t.units_held[Holding(Portfolio("portu", PORTFOLIO), ZPRS)][t.dates.index(date(2021, 4, 14))] == Decimal(
         "1.0000"
     )
 
