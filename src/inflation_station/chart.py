@@ -209,7 +209,7 @@ def _holding_chart(timeline: Timeline, holding: Holding) -> list[dict[str, Any]]
     if holding not in timeline.holding_amount_invested:
         return traces
     # With no value line to show them, the units held go on the amount invested.
-    invested_hover = (
+    invested_hover: dict[str, Any] = (
         {
             "customdata": [[_units(units)] for units in timeline.units_held[holding]],
             "hovertemplate": f"{HOVER_CZK} · %{{customdata[0]}} units",
