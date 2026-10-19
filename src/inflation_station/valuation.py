@@ -1,4 +1,4 @@
-"""Turns Purchases, Managed Portfolios' ledgers, prices and price indices into a daily timeline of plain data.
+"""Turns Purchases, Fees, Managed Portfolios' ledgers, prices and price indices into a daily timeline of plain data.
 
 No I/O: all of it is passed in.
 """
@@ -17,6 +17,7 @@ from inflation_station.purchase import fund_names
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
+    from inflation_station.fee import Fee
     from inflation_station.fund_price import FundPrice
     from inflation_station.fx_rate import FxRate
     from inflation_station.ledger import LedgerEntry
@@ -36,10 +37,10 @@ def no_rates(currency: str) -> str:
 class Hurdle:
     """What the money invested would need to be worth on each day to keep its purchasing power, by one price index.
 
-    A value is None on a day the index is unknown for a Purchase or Deposit counted that day.
+    A value is None on a day the index is unknown for a Purchase, Fee or Deposit counted that day.
     """
 
-    # Σ CZK x I(day) / I(date), over the gross CZK of Purchases and the Deposits dated on or before the day.
+    # Σ CZK x I(day) / I(date), over the gross CZK of Purchases, the Fees and the Deposits dated on or before the day.
     values: tuple[Decimal | None, ...]
     # The first day whose index leans on an estimated month: the day after the last published month starts.
     estimated_from: date
@@ -65,12 +66,12 @@ class PortfolioTimeline:
 
     # Whether it is a Managed Portfolio: one whose money invested is its Deposits, not Purchases (ADR-0002).
     managed: bool
-    # The gross CZK of its Purchases, or its Deposits, dated on or before each day.
+    # The gross CZK of its Purchases plus its Fees, or its Deposits, dated on or before each day.
     amount_invested: tuple[Decimal, ...]
     # The sum of the CZK values of its Holdings and its Cash that can be valued, as `Timeline.whole_portfolio_value`;
     # None when none of them can be.
     value: tuple[Decimal | None, ...] | None
-    # The inflation hurdle of its Purchases or Deposits, by price index series.
+    # The inflation hurdle of its Purchases and Fees, or its Deposits, by price index series.
     hurdles: Mapping[str, Hurdle]
     # Why its Cash in each currency left out of `value` couldn't be valued, by currency.
     cash_not_valued: Mapping[str, str]
@@ -84,12 +85,12 @@ class Timeline:
     """
 
     dates: tuple[date, ...]
-    # The gross CZK of Purchases plus the Deposits dated on or before each day; fees count as invested, so they count
-    # against the return.
+    # The gross CZK of Purchases plus the Fees and the Deposits dated on or before each day; Fees count as invested, so
+    # they count against the return.
     amount_invested: tuple[Decimal, ...]
     # Every Portfolio purchased in or with a ledger, by Portfolio.
     portfolios: Mapping[Portfolio, PortfolioTimeline]
-    # `amount_invested` by Holding, counting only that Holding's Purchases, for every Holding outside Managed
+    # `amount_invested` by Holding, counting only that Holding's Purchases and Fees, for every Holding outside Managed
     # Portfolios: a Holding in a Managed Portfolio has nothing invested in it (ADR-0002).
     holding_amount_invested: Mapping[Holding, tuple[Decimal, ...]]
     # The latest fund name by ISIN, for every fund purchased or held.
@@ -114,7 +115,8 @@ class Timeline:
     not_valued: Mapping[str, str]
     # The inflation hurdle by price index series, for every series with index levels.
     hurdles: Mapping[str, Hurdle]
-    # `hurdles` by Holding, counting only that Holding's Purchases, for the same Holdings as `holding_amount_invested`.
+    # `hurdles` by Holding, counting only that Holding's Purchases and Fees, for the same Holdings as
+    # `holding_amount_invested`.
     holding_hurdles: Mapping[Holding, Mapping[str, Hurdle]]
     # Cash in Managed Portfolios by currency, for every currency in their ledgers: the sum of the entries dated on or
     # before each day. Negative when a hedging leg goes out a day before the other comes in.
@@ -132,12 +134,16 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
     purchases: Sequence[Purchase],
     *,
     ledger: Sequence[LedgerEntry] = (),
+    fees: Sequence[Fee] = (),
     prices: Sequence[FundPrice] = (),
     rates: Sequence[FxRate] = (),
     index_levels: Sequence[IndexLevel] = (),
     today: date,
 ) -> Timeline:
-    """`purchases` and `ledger` must not both be empty: with nothing bought or deposited there is no first day."""
+    """`purchases` and `ledger` must not both be empty: with nothing bought or deposited there is no first day.
+
+    Each Fee must be on a Purchase in `purchases`, so it is counted in that Purchase's Portfolio and Holding.
+    """
     first = min([p.trade_date for p in purchases] + [e.day for e in ledger])
     dates = tuple(first + timedelta(days=n) for n in range((today - first).days + 1))
 
@@ -197,6 +203,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
     }
     invested_in = {
         a: [(p.trade_date, p.gross_czk) for p in purchases if _portfolio(p) == a]
+        + [(f.day, f.czk) for f in fees if _portfolio(f) == a]
         + [(e.day, e.amount) for e in ledger if e.kind == DEPOSIT and _portfolio(e) == a]
         for a in sorted({_portfolio(p) for p in purchases} | managed)
     }
@@ -214,7 +221,12 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
             cash_not_valued=portfolio_cash_not_valued,
         )
     every_investment = [i for invested in invested_in.values() for i in invested]
-    bought_in = {h: [(p.trade_date, p.gross_czk) for p in purchased[h]] for h in holdings if h.portfolio not in managed}
+    bought_in = {
+        h: [(p.trade_date, p.gross_czk) for p in purchased[h]]
+        + [(f.day, f.czk) for f in fees if Holding(_portfolio(f), f.isin) == h]
+        for h in holdings
+        if h.portfolio not in managed
+    }
     return Timeline(
         dates=dates,
         amount_invested=_running_total(dates, every_investment),
@@ -243,8 +255,8 @@ def all_fund_names(purchases: Iterable[Purchase], ledger: Iterable[LedgerEntry])
     return dict(sorted((held_fund_names(ledger) | fund_names(purchases)).items()))
 
 
-def _portfolio(row: Purchase | LedgerEntry) -> Portfolio:
-    """The Portfolio a Purchase or ledger entry is in."""
+def _portfolio(row: Purchase | Fee | LedgerEntry) -> Portfolio:
+    """The Portfolio a Purchase, Fee or ledger entry is in."""
     return Portfolio(row.platform, row.portfolio_id)
 
 
@@ -282,8 +294,8 @@ def _hurdles(
 
 
 def _hurdle(dates: Sequence[date], invested: Sequence[tuple[date, Decimal]], levels: Sequence[IndexLevel]) -> Hurdle:
-    """`invested` is each Purchase's or Deposit's (date, CZK). `levels` must not be empty, and must be one series'
-    levels for consecutive months.
+    """`invested` is each Purchase's, Fee's or Deposit's (date, CZK). `levels` must not be empty, and must be one
+    series' levels for consecutive months.
     """
     index = dict(zip(dates, _daily_index(dates, levels), strict=True))
     values: list[Decimal | None] = []

@@ -2,6 +2,7 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
+from inflation_station.fee import Fee
 from inflation_station.fund_price import FundPrice
 from inflation_station.fx_rate import FxRate
 from inflation_station.ledger import BUY, DEPOSIT, FEE, FOREX_BUY, FOREX_SELL, SELL, LedgerEntry
@@ -676,3 +677,45 @@ def test_cash_with_no_rate_yet_has_no_value_unless_there_is_none_of_it() -> None
 
     assert t.cash_values["EUR"] == (Decimal(0), None, Decimal(0), Decimal(0))
     assert t.whole_portfolio_value == (Decimal(1000), None, Decimal(1000), Decimal(1000))
+
+
+def fee(day: date, czk: str, isin: str = CZK_FUND) -> Fee:
+    """A Fee charged on the Purchase of `isin` traded on `day`."""
+    return Fee(
+        platform="jt", portfolio_id="900000001", source_row_id=f"{isin}-{day}", day=day, isin=isin, czk=Decimal(czk)
+    )
+
+
+def test_a_fee_counts_as_invested_and_never_as_value_at_every_level() -> None:
+    t = timeline(
+        [purchase(date(2021, 6, 15), "9708.49")],
+        fees=[fee(date(2021, 6, 15), "291.51")],
+        prices=[price(date(2021, 6, 15), "9708.49")],
+        today=date(2021, 6, 15),
+    )
+
+    assert t.amount_invested == t.portfolios[JT].amount_invested == (Decimal("10000.00"),)
+    assert t.holding_amount_invested == {jt(CZK_FUND): (Decimal("10000.00"),)}
+    assert t.whole_portfolio_value == t.portfolios[JT].value == t.holding_values[jt(CZK_FUND)]
+    # 9 708.49 CZK of 10 000 invested: -2.9 % on day one.
+    assert t.whole_portfolio_value == (Decimal("9708.49"),)
+
+
+def test_the_hurdle_grows_each_fee_from_its_own_date_at_every_level() -> None:
+    levels = [
+        level(date(2021, 5, 1), "100"),
+        level(date(2021, 6, 1), "110"),
+        level(date(2021, 7, 1), "121"),
+        level(date(2021, 8, 1), "121"),
+    ]
+    bought = [purchase(date(2021, 5, 1), "1000")]
+    # Charged a month after the Purchase it was on.
+    t = timeline(bought, fees=[fee(date(2021, 6, 1), "50")], index_levels=levels, today=date(2021, 7, 1))
+    without_fee = timeline(bought, index_levels=levels, today=date(2021, 7, 1)).hurdles[CSU_CPI].values
+
+    whole, portfolio = t.hurdles[CSU_CPI].values, t.portfolios[JT].hurdles[CSU_CPI].values
+    holding = t.holding_hurdles[jt(CZK_FUND)][CSU_CPI].values
+    charged = t.dates.index(date(2021, 6, 1))
+    # Before 1 Jun the Fee counts nowhere.
+    assert whole[:charged] == portfolio[:charged] == holding[:charged] == without_fee[:charged]
+    assert whole[-1] == portfolio[-1] == holding[-1] == Decimal(1210) + Decimal(55)

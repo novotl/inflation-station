@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -7,9 +8,10 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Session
 
+from inflation_station.fee import Fee
 from inflation_station.ledger import DEPOSIT, LedgerEntry
 from inflation_station.purchase import Purchase
-from inflation_station.store import PurchaseRecord, Store, database_url, engine, migrate
+from inflation_station.store import Added, PurchaseRecord, Store, database_url, engine, migrate
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -102,3 +104,37 @@ def test_upgrading_a_database_stored_by_account_id_keeps_every_row_under_its_por
     # Re-importing the same rows adds nothing.
     assert store.add_purchases([PURCHASE]).added == 0
     assert store.add_ledger_entries([DEPOSIT_ENTRY]).added == 0
+
+
+FEE = Fee(
+    platform="jt",
+    portfolio_id="123",
+    source_row_id="900100001",
+    day=date(2021, 6, 15),
+    isin="LU1756523376",
+    czk=Decimal("291.51"),
+)
+
+
+def test_a_stored_fee_is_identified_by_its_platform_portfolio_and_source_row(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    other_portfolio = replace(FEE, portfolio_id="456")
+
+    assert store.add_fees([FEE, other_portfolio]) == Added(added=2, already_present=0)
+    # Storing an already-stored Fee adds nothing, even with a different amount.
+    assert store.add_fees([replace(FEE, czk=Decimal(1)), other_portfolio]) == Added(added=0, already_present=2)
+    assert store.fees() == [FEE, other_portfolio]
+    assert store.purchases() == []
+
+
+def test_upgrading_a_database_stored_before_fees_keeps_its_rows_and_stores_fees(tmp_path: Path) -> None:
+    url = database_url(tmp_path)
+    migrate(url, "0006")
+    with Session(engine(url)) as session, session.begin():
+        session.add(PurchaseRecord(**vars(PURCHASE), imported_at=datetime(2026, 10, 10, 12, 0, tzinfo=UTC)))
+
+    store = Store(tmp_path)
+
+    assert store.purchases() == [PURCHASE]
+    assert store.fees() == []
+    assert store.add_fees([FEE]).added == 1
