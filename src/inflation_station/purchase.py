@@ -11,11 +11,11 @@ if TYPE_CHECKING:
 class Purchase:
     """A buy of fund units, independent of the platform it was imported from.
 
-    (platform, account_id, source_row_id) identifies the source row, so re-imports never duplicate it.
+    (platform, portfolio_id, source_row_id) identifies the source row, so re-imports never duplicate it.
     """
 
     platform: str
-    account_id: str
+    portfolio_id: str
     source_row_id: str
     isin: str
     fund_name: str

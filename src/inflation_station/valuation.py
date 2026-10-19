@@ -1,4 +1,4 @@
-"""Turns Purchases, Managed Accounts' ledgers, prices and price indices into a daily timeline of plain data.
+"""Turns Purchases, Fees, Managed Portfolios' ledgers, prices and price indices into a daily timeline of plain data.
 
 No I/O: all of it is passed in.
 """
@@ -17,6 +17,7 @@ from inflation_station.purchase import fund_names
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
+    from inflation_station.fee import Fee
     from inflation_station.fund_price import FundPrice
     from inflation_station.fx_rate import FxRate
     from inflation_station.ledger import LedgerEntry
@@ -36,41 +37,41 @@ def no_rates(currency: str) -> str:
 class Hurdle:
     """What the money invested would need to be worth on each day to keep its purchasing power, by one price index.
 
-    A value is None on a day the index is unknown for a Purchase or Deposit counted that day.
+    A value is None on a day the index is unknown for a Purchase, Fee or Deposit counted that day.
     """
 
-    # Σ CZK x I(day) / I(date), over the gross CZK of Purchases and the Deposits dated on or before the day.
+    # Σ CZK x I(day) / I(date), over the gross CZK of Purchases, the Fees and the Deposits dated on or before the day.
     values: tuple[Decimal | None, ...]
     # The first day whose index leans on an estimated month: the day after the last published month starts.
     estimated_from: date
 
 
-class Account(NamedTuple):
-    """An Account, by its Platform and the Platform's own name or number for it."""
+class Portfolio(NamedTuple):
+    """A Portfolio, by its Platform and the Platform's own name or number for it."""
 
     platform: str
-    account_id: str
+    portfolio_id: str
 
 
 class Holding(NamedTuple):
-    """The units of one fund held in one Account."""
+    """The units of one fund held in one Portfolio."""
 
-    account: Account
+    portfolio: Portfolio
     isin: str
 
 
 @dataclass(frozen=True)
-class AccountTimeline:
-    """One Account's series, lined up with the Timeline's `dates`."""
+class PortfolioTimeline:
+    """One Portfolio's series, lined up with the Timeline's `dates`."""
 
-    # Whether it is a Managed Account: one whose money invested is its Deposits, not Purchases (ADR-0002).
+    # Whether it is a Managed Portfolio: one whose money invested is its Deposits, not Purchases (ADR-0002).
     managed: bool
-    # The gross CZK of its Purchases, or its Deposits, dated on or before each day.
+    # The gross CZK of its Purchases plus its Fees, or its Deposits, dated on or before each day.
     amount_invested: tuple[Decimal, ...]
-    # The sum of the CZK values of its Holdings and its Cash that can be valued, as `Timeline.portfolio_value`; None
-    # when none of them can be.
+    # The sum of the CZK values of its Holdings and its Cash that can be valued, as `Timeline.whole_portfolio_value`;
+    # None when none of them can be.
     value: tuple[Decimal | None, ...] | None
-    # The inflation hurdle of its Purchases or Deposits, by price index series.
+    # The inflation hurdle of its Purchases and Fees, or its Deposits, by price index series.
     hurdles: Mapping[str, Hurdle]
     # Why its Cash in each currency left out of `value` couldn't be valued, by currency.
     cash_not_valued: Mapping[str, str]
@@ -84,18 +85,18 @@ class Timeline:
     """
 
     dates: tuple[date, ...]
-    # The gross CZK of Purchases plus the Deposits dated on or before each day; fees count as invested, so they count
-    # against the return.
+    # The gross CZK of Purchases plus the Fees and the Deposits dated on or before each day; Fees count as invested, so
+    # they count against the return.
     amount_invested: tuple[Decimal, ...]
-    # Every Account purchased in or with a ledger, by Account.
-    accounts: Mapping[Account, AccountTimeline]
-    # `amount_invested` by Holding, counting only that Holding's Purchases, for every Holding outside Managed Accounts:
-    # a Holding in a Managed Account has nothing invested in it (ADR-0002).
+    # Every Portfolio purchased in or with a ledger, by Portfolio.
+    portfolios: Mapping[Portfolio, PortfolioTimeline]
+    # `amount_invested` by Holding, counting only that Holding's Purchases and Fees, for every Holding outside Managed
+    # Portfolios: a Holding in a Managed Portfolio has nothing invested in it (ADR-0002).
     holding_amount_invested: Mapping[Holding, tuple[Decimal, ...]]
     # The latest fund name by ISIN, for every fund purchased or held.
     fund_names: Mapping[str, str]
-    # Units held by Holding, for every fund purchased or held in each Account: the units of its Purchases traded, and
-    # of its buys less its sells in Managed Accounts, on or before each day.
+    # Units held by Holding, for every fund purchased or held in each Portfolio: the units of its Purchases traded, and
+    # of its buys less its sells in Managed Portfolios, on or before each day.
     units_held: Mapping[Holding, tuple[Decimal, ...]]
     # CZK value by Holding, for the Holdings of funds that can be valued: units held x the last known price on or
     # before the day, x the last known CZK rate on or before the day for funds not priced in CZK.
@@ -109,14 +110,15 @@ class Timeline:
     # currency of its latest Purchase (else of its latest buy or sell) when it has none.
     priced_in: Mapping[str, str]
     # The sum of `holding_values` and `cash_values`; None when no fund or Cash can be valued.
-    portfolio_value: tuple[Decimal | None, ...] | None
+    whole_portfolio_value: tuple[Decimal | None, ...] | None
     # Why each fund that can't be valued couldn't be, by ISIN.
     not_valued: Mapping[str, str]
     # The inflation hurdle by price index series, for every series with index levels.
     hurdles: Mapping[str, Hurdle]
-    # `hurdles` by Holding, counting only that Holding's Purchases, for the same Holdings as `holding_amount_invested`.
+    # `hurdles` by Holding, counting only that Holding's Purchases and Fees, for the same Holdings as
+    # `holding_amount_invested`.
     holding_hurdles: Mapping[Holding, Mapping[str, Hurdle]]
-    # Cash in Managed Accounts by currency, for every currency in their ledgers: the sum of the entries dated on or
+    # Cash in Managed Portfolios by currency, for every currency in their ledgers: the sum of the entries dated on or
     # before each day. Negative when a hedging leg goes out a day before the other comes in.
     cash: Mapping[str, tuple[Decimal, ...]]
     # CZK value of `cash` by currency, for the currencies that can be valued: the Cash x the last known CZK rate on
@@ -132,19 +134,23 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
     purchases: Sequence[Purchase],
     *,
     ledger: Sequence[LedgerEntry] = (),
+    fees: Sequence[Fee] = (),
     prices: Sequence[FundPrice] = (),
     rates: Sequence[FxRate] = (),
     index_levels: Sequence[IndexLevel] = (),
     today: date,
 ) -> Timeline:
-    """`purchases` and `ledger` must not both be empty: with nothing bought or deposited there is no first day."""
-    first = min([p.trade_date for p in purchases] + [e.day for e in ledger])
+    """`purchases` and `ledger` must not both be empty: with nothing bought or deposited there is no first day.
+
+    Each Fee must be on a Purchase in `purchases`, so it is counted in that Purchase's Portfolio and Holding.
+    """
+    first = min([p.trade_date for p in purchases] + [f.day for f in fees] + [e.day for e in ledger])
     dates = tuple(first + timedelta(days=n) for n in range((today - first).days + 1))
 
-    # Only Managed Accounts have ledgers.
-    managed = {_account(e) for e in ledger}
-    holdings = sorted({Holding(_account(p), p.isin) for p in purchases} | {_holding(e) for e in ledger if e.isin})
-    purchased = {h: [p for p in purchases if Holding(_account(p), p.isin) == h] for h in holdings}
+    # Only Managed Portfolios have ledgers.
+    managed = {_portfolio(e) for e in ledger}
+    holdings = sorted({Holding(_portfolio(p), p.isin) for p in purchases} | {_holding(e) for e in ledger if e.isin})
+    purchased = {h: [p for p in purchases if Holding(_portfolio(p), p.isin) == h] for h in holdings}
     traded = {h: [e for e in ledger if e.isin and _holding(e) == h] for h in holdings}
     units_held = {
         h: _running_total(
@@ -157,7 +163,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
         for currency in sorted({r.currency for r in rates})
     } | {CZK: tuple(Decimal(1) for _ in dates)}
 
-    # Fund prices and what they're in, by ISIN: a fund held in two Accounts is priced once.
+    # Fund prices and what they're in, by ISIN: a fund held in two Portfolios is priced once.
     fund_currencies: dict[str, str] = {}
     not_valued: dict[str, str] = {}
     priced_in: dict[str, str] = {}
@@ -190,35 +196,41 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
             holding_values[h] = _zero_when_not_held(units, _times(holding_currency_values[h], czk_per_unit))
     cash = _cash(dates, ledger)
     cash_values, cash_not_valued = _cash_values(cash, czk_rates)
-    portfolio_parts = [*holding_values.values(), *cash_values.values()]
+    whole_portfolio_parts = [*holding_values.values(), *cash_values.values()]
 
     levels_by_series = {
         series: [i for i in index_levels if i.series == series] for series in sorted({i.series for i in index_levels})
     }
     invested_in = {
-        a: [(p.trade_date, p.gross_czk) for p in purchases if _account(p) == a]
-        + [(e.day, e.amount) for e in ledger if e.kind == DEPOSIT and _account(e) == a]
-        for a in sorted({_account(p) for p in purchases} | managed)
+        a: [(p.trade_date, p.gross_czk) for p in purchases if _portfolio(p) == a]
+        + [(f.day, f.czk) for f in fees if _portfolio(f) == a]
+        + [(e.day, e.amount) for e in ledger if e.kind == DEPOSIT and _portfolio(e) == a]
+        for a in sorted({_portfolio(p) for p in purchases} | managed)
     }
-    accounts = {}
+    portfolios = {}
     for a, invested in invested_in.items():
-        account_cash = _cash(dates, [e for e in ledger if _account(e) == a])
-        parts = [values for h, values in holding_values.items() if h.account == a]
-        account_cash_values, account_cash_not_valued = _cash_values(account_cash, czk_rates)
-        parts += account_cash_values.values()
-        accounts[a] = AccountTimeline(
+        portfolio_cash = _cash(dates, [e for e in ledger if _portfolio(e) == a])
+        parts = [values for h, values in holding_values.items() if h.portfolio == a]
+        portfolio_cash_values, portfolio_cash_not_valued = _cash_values(portfolio_cash, czk_rates)
+        parts += portfolio_cash_values.values()
+        portfolios[a] = PortfolioTimeline(
             managed=a in managed,
             amount_invested=_running_total(dates, invested),
             value=_sum(parts) if parts else None,
             hurdles=_hurdles(dates, invested, levels_by_series),
-            cash_not_valued=account_cash_not_valued,
+            cash_not_valued=portfolio_cash_not_valued,
         )
     every_investment = [i for invested in invested_in.values() for i in invested]
-    bought_in = {h: [(p.trade_date, p.gross_czk) for p in purchased[h]] for h in holdings if h.account not in managed}
+    bought_in = {
+        h: [(p.trade_date, p.gross_czk) for p in purchased[h]]
+        + [(f.day, f.czk) for f in fees if Holding(_portfolio(f), f.isin) == h]
+        for h in holdings
+        if h.portfolio not in managed
+    }
     return Timeline(
         dates=dates,
         amount_invested=_running_total(dates, every_investment),
-        accounts=accounts,
+        portfolios=portfolios,
         holding_amount_invested={h: _running_total(dates, bought) for h, bought in bought_in.items()},
         fund_names=all_fund_names(purchases, ledger),
         units_held=units_held,
@@ -226,7 +238,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
         holding_currency_values=holding_currency_values,
         fund_currencies=fund_currencies,
         priced_in=priced_in,
-        portfolio_value=_sum(portfolio_parts) if portfolio_parts else None,
+        whole_portfolio_value=_sum(whole_portfolio_parts) if whole_portfolio_parts else None,
         not_valued=not_valued,
         hurdles=_hurdles(dates, every_investment, levels_by_series),
         holding_hurdles={h: _hurdles(dates, bought, levels_by_series) for h, bought in bought_in.items()},
@@ -239,18 +251,18 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
 
 def all_fund_names(purchases: Iterable[Purchase], ledger: Iterable[LedgerEntry]) -> dict[str, str]:
     """The name of every fund purchased or held, by ISIN, sorted by ISIN."""
-    # A fund's name on a Platform where you pick the funds wins over its ticker in a Managed Account.
+    # A fund's name on a Platform where you pick the funds wins over its ticker in a Managed Portfolio.
     return dict(sorted((held_fund_names(ledger) | fund_names(purchases)).items()))
 
 
-def _account(row: Purchase | LedgerEntry) -> Account:
-    """The Account a Purchase or ledger entry is in."""
-    return Account(row.platform, row.account_id)
+def _portfolio(row: Purchase | Fee | LedgerEntry) -> Portfolio:
+    """The Portfolio a Purchase, Fee or ledger entry is in."""
+    return Portfolio(row.platform, row.portfolio_id)
 
 
 def _holding(entry: LedgerEntry) -> Holding:
     """The Holding a buy or sell moves the units of."""
-    return Holding(_account(entry), entry.isin)
+    return Holding(_portfolio(entry), entry.isin)
 
 
 def _cash(dates: Sequence[date], ledger: Sequence[LedgerEntry]) -> dict[str, tuple[Decimal, ...]]:
@@ -282,8 +294,8 @@ def _hurdles(
 
 
 def _hurdle(dates: Sequence[date], invested: Sequence[tuple[date, Decimal]], levels: Sequence[IndexLevel]) -> Hurdle:
-    """`invested` is each Purchase's or Deposit's (date, CZK). `levels` must not be empty, and must be one series'
-    levels for consecutive months.
+    """`invested` is each Purchase's, Fee's or Deposit's (date, CZK). `levels` must not be empty, and must be one
+    series' levels for consecutive months.
     """
     index = dict(zip(dates, _daily_index(dates, levels), strict=True))
     values: list[Decimal | None] = []

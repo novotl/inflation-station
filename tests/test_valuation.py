@@ -2,19 +2,20 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
+from inflation_station.fee import Fee
 from inflation_station.fund_price import FundPrice
 from inflation_station.fx_rate import FxRate
 from inflation_station.ledger import BUY, DEPOSIT, FEE, FOREX_BUY, FOREX_SELL, SELL, LedgerEntry
 from inflation_station.price_index import CSU_CPI, IndexLevel
 from inflation_station.purchase import Purchase
-from inflation_station.valuation import NO_PRICES, Account, Holding, timeline
+from inflation_station.valuation import NO_PRICES, Holding, Portfolio, timeline
 
 CZK_FUND = "LU1756523376"
 OTHER_CZK_FUND = "CZ0008473808"
 EUR_FUND = "LU0260870158"
 ETF = "IE00B53QG562"
-JT = Account("jt", "900000001")
-PORTU = Account("portu", "Moje portfolio")
+JT = Portfolio("jt", "900000001")
+PORTU = Portfolio("portu", "Moje portfolio")
 
 
 def jt(isin: str) -> Holding:
@@ -24,7 +25,7 @@ def jt(isin: str) -> Holding:
 def purchase(trade_date: date, gross_czk: str, isin: str = CZK_FUND, units: str = "1") -> Purchase:
     return Purchase(
         platform="jt",
-        account_id="900000001",
+        portfolio_id="900000001",
         source_row_id=f"{isin}-{trade_date}",
         isin=isin,
         fund_name=f"Fund {isin}",
@@ -107,17 +108,17 @@ def test_a_holding_with_no_price_yet_has_no_value() -> None:
     )
 
     assert t.holding_values[jt(CZK_FUND)] == (None, Decimal(10))
-    assert t.portfolio_value == (None, Decimal(10))
+    assert t.whole_portfolio_value == (None, Decimal(10))
 
 
-def test_portfolio_value_is_the_sum_of_the_fund_values() -> None:
+def test_whole_portfolio_value_is_the_sum_of_the_fund_values() -> None:
     t = timeline(
         [purchase(date(2021, 6, 13), "1000", units="2"), purchase(date(2021, 6, 14), "1000", isin=OTHER_CZK_FUND)],
         prices=[price(date(2021, 6, 13), "10"), price(date(2021, 6, 13), "1.5", isin=OTHER_CZK_FUND)],
         today=date(2021, 6, 14),
     )
 
-    assert t.portfolio_value == (Decimal(20), Decimal("21.5"))
+    assert t.whole_portfolio_value == (Decimal(20), Decimal("21.5"))
 
 
 def rate(day: date, czk_per_unit: str, currency: str = "EUR") -> FxRate:
@@ -141,7 +142,7 @@ def test_eur_funds_are_valued_in_czk_at_the_rate_carried_forward_over_weekends()
     assert t.not_valued == {}
 
 
-def test_portfolio_value_counts_eur_funds_in_czk() -> None:
+def test_whole_portfolio_value_counts_eur_funds_in_czk() -> None:
     t = timeline(
         [purchase(date(2021, 6, 13), "1000"), purchase(date(2021, 6, 13), "1000", isin=EUR_FUND)],
         prices=[price(date(2021, 6, 13), "10"), price(date(2021, 6, 13), "40", isin=EUR_FUND, currency="EUR")],
@@ -149,7 +150,7 @@ def test_portfolio_value_counts_eur_funds_in_czk() -> None:
         today=date(2021, 6, 13),
     )
 
-    assert t.portfolio_value == (Decimal(1030),)
+    assert t.whole_portfolio_value == (Decimal(1030),)
 
 
 def test_a_holding_with_no_rate_yet_has_no_value() -> None:
@@ -172,7 +173,7 @@ def test_funds_priced_in_a_currency_without_rates_are_not_valued() -> None:
     )
 
     assert set(t.holding_values) == {jt(CZK_FUND)}
-    assert t.portfolio_value == (Decimal(10),)
+    assert t.whole_portfolio_value == (Decimal(10),)
     assert t.not_valued == {EUR_FUND: "no EUR rates stored"}
 
 
@@ -195,7 +196,7 @@ def test_funds_without_prices_are_not_valued() -> None:
     t = timeline([purchase(date(2021, 6, 13), "1000")], today=date(2021, 6, 13))
 
     assert t.holding_values == {}
-    assert t.portfolio_value is None
+    assert t.whole_portfolio_value is None
     assert t.not_valued == {CZK_FUND: "no prices stored"}
 
 
@@ -411,7 +412,7 @@ def entry(day: date, kind: str, amount: str, currency: str = "CZK") -> LedgerEnt
     """A ledger entry that moves only Cash."""
     return LedgerEntry(
         platform="portu",
-        account_id="Moje portfolio",
+        portfolio_id="Moje portfolio",
         source_row_id=f"{day};{kind};;{amount};{currency};1",
         day=day,
         kind=kind,
@@ -472,7 +473,7 @@ def test_the_hurdle_grows_each_deposit_from_its_date() -> None:
     assert t.holding_hurdles[jt(CZK_FUND)][CSU_CPI].values[-1] == Decimal(1210)
 
 
-def test_funds_held_in_a_managed_account_have_units_but_nothing_invested_in_them() -> None:
+def test_funds_held_in_a_managed_portfolio_have_units_but_nothing_invested_in_them() -> None:
     t = timeline(
         [],
         ledger=[
@@ -484,7 +485,7 @@ def test_funds_held_in_a_managed_account_have_units_but_nothing_invested_in_them
     )
 
     assert t.units_held == {Holding(PORTU, ETF): (Decimal("0.04"), Decimal("0.03"))}
-    # A Holding in a Managed Account has nothing invested in it (ADR-0002).
+    # A Holding in a Managed Portfolio has nothing invested in it (ADR-0002).
     assert t.holding_amount_invested == t.holding_hurdles == {}
     assert t.fund_names == {ETF: f"ETF {ETF}"}
     assert t.priced_in == {ETF: "EUR"}
@@ -511,12 +512,12 @@ def test_cash_is_every_ledger_entry_summed_by_currency() -> None:
     }
 
 
-def test_the_same_fund_in_two_accounts_is_two_holdings_priced_once() -> None:
-    other = Account("jt", "900000002")
+def test_the_same_fund_in_two_portfolios_is_two_holdings_priced_once() -> None:
+    other = Portfolio("jt", "900000002")
     t = timeline(
         [
             purchase(date(2021, 6, 13), "1000", units="2"),
-            replace(purchase(date(2021, 6, 14), "300", units="3"), account_id=other.account_id),
+            replace(purchase(date(2021, 6, 14), "300", units="3"), portfolio_id=other.portfolio_id),
         ],
         prices=[price(date(2021, 6, 13), "10")],
         today=date(2021, 6, 14),
@@ -534,7 +535,7 @@ def test_the_same_fund_in_two_accounts_is_two_holdings_priced_once() -> None:
     assert t.priced_in == {CZK_FUND: "CZK"}
 
 
-def test_each_account_has_the_amount_invested_and_hurdles_of_its_own_purchases_or_deposits() -> None:
+def test_each_portfolio_has_the_amount_invested_and_hurdles_of_its_own_purchases_or_deposits() -> None:
     t = timeline(
         [purchase(date(2021, 5, 1), "1000")],
         ledger=[entry(date(2021, 6, 1), DEPOSIT, "500"), entry(date(2021, 6, 2), FEE, "-10")],
@@ -547,16 +548,16 @@ def test_each_account_has_the_amount_invested_and_hurdles_of_its_own_purchases_o
         today=date(2021, 7, 1),
     )
 
-    jt_account, portu = t.accounts[JT], t.accounts[PORTU]
-    assert list(t.accounts) == [JT, PORTU]
-    assert (jt_account.managed, portu.managed) == (False, True)
-    assert (jt_account.amount_invested[-1], portu.amount_invested[-1]) == (Decimal(1000), Decimal(500))
+    jt_portfolio, portu = t.portfolios[JT], t.portfolios[PORTU]
+    assert list(t.portfolios) == [JT, PORTU]
+    assert (jt_portfolio.managed, portu.managed) == (False, True)
+    assert (jt_portfolio.amount_invested[-1], portu.amount_invested[-1]) == (Decimal(1000), Decimal(500))
     assert portu.amount_invested[0] == Decimal(0)
-    assert jt_account.hurdles[CSU_CPI].values[-1] == Decimal(1210)
+    assert jt_portfolio.hurdles[CSU_CPI].values[-1] == Decimal(1210)
     assert portu.hurdles[CSU_CPI].values[-1] == Decimal(550)
 
 
-def test_an_accounts_value_is_its_holdings_and_its_cash_in_czk_negative_or_not() -> None:
+def test_a_portfolios_value_is_its_holdings_and_its_cash_in_czk_negative_or_not() -> None:
     t = timeline(
         [purchase(date(2021, 6, 13), "1000", units="2")],
         ledger=[
@@ -573,22 +574,23 @@ def test_an_accounts_value_is_its_holdings_and_its_cash_in_czk_negative_or_not()
     )
 
     # 13 Jun: 100 CZK + 16 EUR x 25. 14 Jun: 100 CZK + 0.16 units x 100 EUR x 25 - 1 EUR x 25; USD has no rates.
-    assert t.accounts[PORTU].value == (Decimal(500), Decimal(100) + Decimal(400) - Decimal(25))
-    assert t.accounts[PORTU].cash_not_valued == {"USD": "no USD rates stored"}
-    # No Cash outside Managed Accounts.
-    assert t.accounts[JT].value == t.holding_values[jt(CZK_FUND)]
+    assert t.portfolios[PORTU].value == (Decimal(500), Decimal(100) + Decimal(400) - Decimal(25))
+    assert t.portfolios[PORTU].cash_not_valued == {"USD": "no USD rates stored"}
+    # No Cash outside Managed Portfolios.
+    assert t.portfolios[JT].value == t.holding_values[jt(CZK_FUND)]
 
 
-def test_an_account_has_no_value_only_when_nothing_in_it_can_be_valued() -> None:
+def test_a_portfolio_has_no_value_only_when_nothing_in_it_can_be_valued() -> None:
     t = timeline(
         [purchase(date(2021, 6, 13), "1000")],
         ledger=[entry(date(2021, 6, 13), DEPOSIT, "500"), trade(date(2021, 6, 13), "0.04", "-4")],
         today=date(2021, 6, 13),
     )
 
-    # Neither fund has prices and EUR has no rates, but Portu's CZK Cash can be valued, as in the portfolio's value.
-    assert t.accounts[PORTU].value == t.portfolio_value == (Decimal(500),)
-    assert t.accounts[JT].value is None
+    # Neither fund has prices and EUR has no rates, but Portu's CZK Cash can be valued, as in the Whole Portfolio's
+    # value.
+    assert t.portfolios[PORTU].value == t.whole_portfolio_value == (Decimal(500),)
+    assert t.portfolios[JT].value is None
 
 
 def test_cash_is_valued_in_czk_at_the_last_known_rate_of_each_currency() -> None:
@@ -614,11 +616,11 @@ def test_cash_is_valued_in_czk_at_the_last_known_rate_of_each_currency() -> None
         "EUR": (Decimal(500), Decimal(500), Decimal(500), Decimal(520)),
         "USD": (Decimal(200),) * 4,
     }
-    assert t.cash_value == t.portfolio_value == (Decimal(1000), Decimal(1000), Decimal(1000), Decimal(1020))
+    assert t.cash_value == t.whole_portfolio_value == (Decimal(1000), Decimal(1000), Decimal(1000), Decimal(1020))
     assert t.cash_not_valued == {}
 
 
-def test_portfolio_value_is_the_funds_plus_the_cash_so_fees_reduce_it() -> None:
+def test_whole_portfolio_value_is_the_funds_plus_the_cash_so_fees_reduce_it() -> None:
     t = timeline(
         [purchase(date(2021, 6, 13), "1000", units="2")],
         ledger=[entry(date(2021, 6, 13), DEPOSIT, "500"), entry(date(2021, 6, 14), FEE, "-25")],
@@ -626,7 +628,7 @@ def test_portfolio_value_is_the_funds_plus_the_cash_so_fees_reduce_it() -> None:
         today=date(2021, 6, 14),
     )
 
-    assert t.portfolio_value == (Decimal(520), Decimal(495))
+    assert t.whole_portfolio_value == (Decimal(520), Decimal(495))
 
 
 def test_negative_cash_is_valued_as_negative() -> None:
@@ -645,7 +647,7 @@ def test_negative_cash_is_valued_as_negative() -> None:
     )
 
     assert t.cash_values["USD"] == (Decimal(-1000), Decimal(0))
-    assert t.portfolio_value == (Decimal(0), Decimal(1000))
+    assert t.whole_portfolio_value == (Decimal(0), Decimal(1000))
 
 
 def test_cash_in_a_currency_without_rates_is_not_valued() -> None:
@@ -657,7 +659,7 @@ def test_cash_in_a_currency_without_rates_is_not_valued() -> None:
     )
 
     assert set(t.cash_values) == {"CZK"}
-    assert t.portfolio_value == (Decimal(1000),)
+    assert t.whole_portfolio_value == (Decimal(1000),)
     assert t.cash_not_valued == {"USD": "no USD rates stored"}
 
 
@@ -674,4 +676,46 @@ def test_cash_with_no_rate_yet_has_no_value_unless_there_is_none_of_it() -> None
     )
 
     assert t.cash_values["EUR"] == (Decimal(0), None, Decimal(0), Decimal(0))
-    assert t.portfolio_value == (Decimal(1000), None, Decimal(1000), Decimal(1000))
+    assert t.whole_portfolio_value == (Decimal(1000), None, Decimal(1000), Decimal(1000))
+
+
+def fee(day: date, czk: str, isin: str = CZK_FUND) -> Fee:
+    """A Fee charged on `day` on the J&T Purchase of `isin`."""
+    return Fee(
+        platform="jt", portfolio_id="900000001", source_row_id=f"{isin}-{day}", day=day, isin=isin, czk=Decimal(czk)
+    )
+
+
+def test_a_fee_counts_as_invested_and_never_as_value_at_every_level() -> None:
+    t = timeline(
+        [purchase(date(2021, 6, 15), "9708.49")],
+        fees=[fee(date(2021, 6, 15), "291.51")],
+        prices=[price(date(2021, 6, 15), "9708.49")],
+        today=date(2021, 6, 15),
+    )
+
+    assert t.amount_invested == t.portfolios[JT].amount_invested == (Decimal("10000.00"),)
+    assert t.holding_amount_invested == {jt(CZK_FUND): (Decimal("10000.00"),)}
+    assert t.whole_portfolio_value == t.portfolios[JT].value == t.holding_values[jt(CZK_FUND)]
+    # 9 708.49 CZK of 10 000 invested: -2.9 % on day one.
+    assert t.whole_portfolio_value == (Decimal("9708.49"),)
+
+
+def test_the_hurdle_grows_each_fee_from_its_own_date_at_every_level() -> None:
+    levels = [
+        level(date(2021, 5, 1), "100"),
+        level(date(2021, 6, 1), "110"),
+        level(date(2021, 7, 1), "121"),
+        level(date(2021, 8, 1), "121"),
+    ]
+    bought = [purchase(date(2021, 5, 1), "1000")]
+    # Charged a month after the Purchase it was on.
+    t = timeline(bought, fees=[fee(date(2021, 6, 1), "50")], index_levels=levels, today=date(2021, 7, 1))
+    without_fee = timeline(bought, index_levels=levels, today=date(2021, 7, 1)).hurdles[CSU_CPI].values
+
+    whole, portfolio = t.hurdles[CSU_CPI].values, t.portfolios[JT].hurdles[CSU_CPI].values
+    holding = t.holding_hurdles[jt(CZK_FUND)][CSU_CPI].values
+    charged = t.dates.index(date(2021, 6, 1))
+    # Before 1 Jun the Fee counts nowhere.
+    assert whole[:charged] == portfolio[:charged] == holding[:charged] == without_fee[:charged]
+    assert whole[-1] == portfolio[-1] == holding[-1] == Decimal(1210) + Decimal(55)

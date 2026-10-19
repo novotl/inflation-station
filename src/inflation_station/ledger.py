@@ -1,4 +1,4 @@
-"""A Managed Account's ledger: every row of its export, each moving its Cash and, for buys and sells, its units."""
+"""A Managed Portfolio's ledger: every row of its export, each moving its Cash and, for buys and sells, its units."""
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -14,13 +14,13 @@ DEPOSIT, BUY, SELL, FOREX_BUY, FOREX_SELL, FEE = "deposit", "buy", "sell", "fore
 
 @dataclass(frozen=True)
 class LedgerEntry:
-    """One row of a Managed Account's export, independent of the platform it was imported from.
+    """One row of a Managed Portfolio's export, independent of the platform it was imported from.
 
-    (platform, account_id, source_row_id) identifies the source row, so re-imports never duplicate it.
+    (platform, portfolio_id, source_row_id) identifies the source row, so re-imports never duplicate it.
     """
 
     platform: str
-    account_id: str
+    portfolio_id: str
     source_row_id: str
     day: date
     kind: str
