@@ -560,7 +560,7 @@ def ff_world(units: int) -> Purchase:
     """A J&T Purchase of `units` FF World units at 10 CZK, in Account 900000001 on 13 Jun 2021."""
     return Purchase(
         platform="jt",
-        account_id="900000001",
+        portfolio_id="900000001",
         source_row_id="1",
         isin="LU1756523376",
         fund_name="FF - World Fund A-ACC-CZK",
@@ -577,7 +577,7 @@ def ff_world(units: int) -> Purchase:
 def test_one_fund_in_two_accounts_is_two_holdings_each_naming_its_account(tmp_path: Path) -> None:
     bought = ff_world(units=2)
     t = timeline(
-        [bought, replace(bought, account_id="900000002", units=Decimal(3), gross_czk=Decimal(30))],
+        [bought, replace(bought, portfolio_id="900000002", units=Decimal(3), gross_czk=Decimal(30))],
         prices=[FundPrice(isin="LU1756523376", day=date(2021, 6, 13), price=Decimal(10), currency="CZK")],
         today=date(2021, 6, 14),
     )
@@ -602,7 +602,7 @@ def test_an_account_with_nothing_valued_says_whether_its_funds_or_its_cash_are_m
     )
     buy = replace(
         usd,
-        account_id="Moje portfolio",
+        portfolio_id="Moje portfolio",
         kind=BUY,
         isin="IE00B5BMR087",
         fund_name="CSPX LN",

@@ -18,7 +18,8 @@ PDF_SIGNATURE = b"%PDF-"
 
 @dataclass(frozen=True)
 class Imported:
-    """What a set of exports holds: Purchases from Platforms where you pick the funds, and Managed Accounts' ledgers."""
+    """What a set of exports holds: Purchases from Platforms where you pick the funds, and Managed Portfolios'
+    ledgers."""
 
     purchases: list[Purchase]
     ledger: list[LedgerEntry]

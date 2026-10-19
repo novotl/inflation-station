@@ -35,9 +35,9 @@ def price_warnings(
     fund_names: Mapping[str, str],
     sources: Mapping[str, PriceSource],
 ) -> list[str]:
-    """A warning for each Purchase, or Managed Account buy or sell, whose price is in another currency than, or differs
-    by more than MAX_DIFFERENCE from, the stored price on its date. `fund_names` and `sources` must cover every fund
-    bought or sold."""
+    """A warning for each Purchase, or Managed Portfolio buy or sell, whose price is in another currency than, or
+    differs by more than MAX_DIFFERENCE from, the stored price on its date. `fund_names` and `sources` must cover every
+    fund bought or sold."""
     by_day = {(p.isin, p.day): p for p in prices}
     buys_and_sells = [_BuyOrSell(p.trade_date, p.isin, BUY, p.unit_price, p.unit_price_currency) for p in purchases]
     buys_and_sells += [

@@ -24,7 +24,7 @@ def jt(isin: str) -> Holding:
 def purchase(trade_date: date, gross_czk: str, isin: str = CZK_FUND, units: str = "1") -> Purchase:
     return Purchase(
         platform="jt",
-        account_id="900000001",
+        portfolio_id="900000001",
         source_row_id=f"{isin}-{trade_date}",
         isin=isin,
         fund_name=f"Fund {isin}",
@@ -411,7 +411,7 @@ def entry(day: date, kind: str, amount: str, currency: str = "CZK") -> LedgerEnt
     """A ledger entry that moves only Cash."""
     return LedgerEntry(
         platform="portu",
-        account_id="Moje portfolio",
+        portfolio_id="Moje portfolio",
         source_row_id=f"{day};{kind};;{amount};{currency};1",
         day=day,
         kind=kind,
@@ -516,7 +516,7 @@ def test_the_same_fund_in_two_accounts_is_two_holdings_priced_once() -> None:
     t = timeline(
         [
             purchase(date(2021, 6, 13), "1000", units="2"),
-            replace(purchase(date(2021, 6, 14), "300", units="3"), account_id=other.account_id),
+            replace(purchase(date(2021, 6, 14), "300", units="3"), portfolio_id=other.account_id),
         ],
         prices=[price(date(2021, 6, 13), "10")],
         today=date(2021, 6, 14),

@@ -37,7 +37,7 @@ def main(ctx: click.Context, data_dir: Path | None) -> None:
 @click.argument("files", nargs=-1, required=True, type=click.Path(dir_okay=False, path_type=Path))
 @click.pass_obj
 def import_(data_dir: Path, files: tuple[Path, ...]) -> None:
-    """Import J&T and Portu exports (CSV) and INVESTIKA statements (PDF, a cash and a holdings one per contract).
+    """Import J&T and Portu exports (CSV) and INVESTIKA statements (PDF, a cash and a holdings one per Portfolio).
 
     Each file's format is recognised from its content. If any file fails, nothing is imported.
     """
@@ -156,7 +156,7 @@ def _stored_buys_and_sells(data_dir: Path) -> tuple[list[Purchase], list[LedgerE
     purchases, ledger = _read_purchases_and_ledger(data_dir)
     if not purchases and not any(e.isin for e in ledger):
         msg = (
-            "no Purchases or Managed Account buys to fetch prices for yet; import first: "
+            "no Purchases or Managed Portfolio buys to fetch prices for yet; import first: "
             "inflation-station import <file>..."
         )
         raise InflationStationError(msg)
