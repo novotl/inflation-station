@@ -1,6 +1,6 @@
 """Reads Portu transaction exports: semicolons, Czech headers, `1 501,01` numbers, `DD.MM.YYYY` dates, newest first.
 
-Portu is a Managed Account (ADR-0002): every row is a LedgerEntry, and only its Deposits are money invested.
+Portu is a Managed Portfolio (ADR-0002): every row is a LedgerEntry, and only its Deposits are money invested.
 """
 
 import csv
@@ -29,7 +29,7 @@ TYPE_SEPARATOR = " \u2013 "
 
 # The columns read from the export, each named once.
 DATE = "Datum"
-ACCOUNT_ID = "Název"
+PORTFOLIO_ID = "Název"
 TYPE = "Typ"
 SYMBOL = "Symbol"
 ISIN = "ISIN"
@@ -37,9 +37,9 @@ UNITS = "Kusy / Pozice"
 UNIT_PRICE = "Cena"
 AMOUNT = "Hodnota"
 CURRENCY = "Měna"
-COLUMNS = (DATE, ACCOUNT_ID, TYPE, SYMBOL, ISIN, UNITS, UNIT_PRICE, AMOUNT, CURRENCY)
+COLUMNS = (DATE, PORTFOLIO_ID, TYPE, SYMBOL, ISIN, UNITS, UNIT_PRICE, AMOUNT, CURRENCY)
 # What an export's header starts with; no other export we read starts this way.
-SIGNATURE = (DATE, ACCOUNT_ID, TYPE)
+SIGNATURE = (DATE, PORTFOLIO_ID, TYPE)
 
 
 class RowError(Exception):
@@ -104,12 +104,12 @@ def _entry(row: dict[str, str], occurrences: Counter[tuple[str, ...]]) -> Ledger
         # Units are exported unsigned.
         units = -units if kind == SELL else units
     key = (day.isoformat(), row_type, row[SYMBOL], str(amount), row[CURRENCY])
-    # Counted per Account, so one portfolio's rows never shift another's count.
-    occurrences[row[ACCOUNT_ID], *key] += 1
+    # Counted per Portfolio, so one Portfolio's rows never shift another's count.
+    occurrences[row[PORTFOLIO_ID], *key] += 1
     return LedgerEntry(
         platform="portu",
-        account_id=row[ACCOUNT_ID],
-        source_row_id=";".join((*key, str(occurrences[row[ACCOUNT_ID], *key]))),
+        portfolio_id=row[PORTFOLIO_ID],
+        source_row_id=";".join((*key, str(occurrences[row[PORTFOLIO_ID], *key]))),
         day=day,
         kind=kind,
         isin=isin,

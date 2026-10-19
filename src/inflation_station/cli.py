@@ -37,7 +37,7 @@ def main(ctx: click.Context, data_dir: Path | None) -> None:
 @click.argument("files", nargs=-1, required=True, type=click.Path(dir_okay=False, path_type=Path))
 @click.pass_obj
 def import_(data_dir: Path, files: tuple[Path, ...]) -> None:
-    """Import J&T and Portu exports (CSV) and INVESTIKA statements (PDF, a cash and a holdings one per contract).
+    """Import J&T and Portu exports (CSV) and INVESTIKA statements (PDF, a cash and a holdings one per Portfolio).
 
     Each file's format is recognised from its content. If any file fails, nothing is imported.
     """
@@ -45,11 +45,14 @@ def import_(data_dir: Path, files: tuple[Path, ...]) -> None:
         imported = read_files(files)
         store = Store(data_dir)
         purchases = store.add_purchases(imported.purchases)
+        fees = store.add_fees(imported.fees)
         ledger = store.add_ledger_entries(imported.ledger)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
     if imported.purchases or not imported.ledger:
         click.echo(f"{purchases.added} Purchases added, {purchases.already_present} already present.")
+    if imported.fees:
+        click.echo(f"{fees.added} Fees added, {fees.already_present} already present.")
     if imported.ledger:
         click.echo(f"{ledger.added} ledger entries added, {ledger.already_present} already present.")
 
@@ -129,15 +132,24 @@ def fetch_cpi(data_dir: Path) -> None:
 @main.command()
 @click.pass_obj
 def chart(data_dir: Path) -> None:
-    """Write an interactive HTML chart of the portfolio to the data directory."""
+    """Write an interactive HTML chart of the Whole Portfolio to the data directory."""
     try:
         purchases, ledger = _stored_purchases_and_ledger(data_dir, "to chart")
         store = Store(data_dir)
         prices = store.fund_prices()
         rates = store.fx_rates()
         index_levels = store.index_levels()
+        fees = store.fees()
         today = clock.today()
-        t = timeline(purchases, ledger=ledger, prices=prices, rates=rates, index_levels=index_levels, today=today)
+        t = timeline(
+            purchases,
+            ledger=ledger,
+            fees=fees,
+            prices=prices,
+            rates=rates,
+            index_levels=index_levels,
+            today=today,
+        )
         # Only warnings, on stderr and on the page: the chart is still right up to each series' last point.
         warnings = out_of_date(
             prices=prices, rates=rates, index_levels=index_levels, fund_names=t.fund_names, today=today
@@ -156,7 +168,7 @@ def _stored_buys_and_sells(data_dir: Path) -> tuple[list[Purchase], list[LedgerE
     purchases, ledger = _read_purchases_and_ledger(data_dir)
     if not purchases and not any(e.isin for e in ledger):
         msg = (
-            "no Purchases or Managed Account buys to fetch prices for yet; import first: "
+            "no Purchases or Managed Portfolio buys to fetch prices for yet; import first: "
             "inflation-station import <file>..."
         )
         raise InflationStationError(msg)
