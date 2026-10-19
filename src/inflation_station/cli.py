@@ -129,7 +129,7 @@ def fetch_cpi(data_dir: Path) -> None:
 @main.command()
 @click.pass_obj
 def chart(data_dir: Path) -> None:
-    """Write an interactive HTML chart of the portfolio to the data directory."""
+    """Write an interactive HTML chart of the Whole Portfolio to the data directory."""
     try:
         purchases, ledger = _stored_purchases_and_ledger(data_dir, "to chart")
         store = Store(data_dir)

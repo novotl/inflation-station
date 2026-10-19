@@ -72,14 +72,14 @@ def _page_data(timeline: Timeline, warnings: Sequence[str]) -> dict[str, Any]:
         "warnings": list(warnings),
         "benchmark": NAMES[benchmark] if benchmark else None,
         "estimatedFrom": hurdle.estimated_from.isoformat() if hurdle else None,
-        "portfolio": {
-            "value": _last(timeline.portfolio_value),
+        "wholePortfolio": {
+            "value": _last(timeline.whole_portfolio_value),
             "invested": _last(timeline.amount_invested),
             "hurdles": [{"name": NAMES[series], "value": _last(h.values)} for series, h in timeline.hurdles.items()],
             "benchmarkHurdle": _last(hurdle.values) if hurdle else None,
-            "chart": _overall(timeline),
+            "chart": _whole_portfolio_chart(timeline),
             "composition": _composition(timeline, order),
-            "relative": _relative(timeline.dates, timeline.portfolio_value, timeline.amount_invested, hurdle),
+            "relative": _relative(timeline.dates, timeline.whole_portfolio_value, timeline.amount_invested, hurdle),
         },
         "accounts": [
             _account_section(timeline, account, benchmark)
@@ -92,7 +92,7 @@ def _page_data(timeline: Timeline, warnings: Sequence[str]) -> dict[str, Any]:
 
 
 def _account_section(timeline: Timeline, account: Account, benchmark: str | None) -> dict[str, Any]:
-    """An Account's figures on the last day and its chart, as the portfolio's."""
+    """An Account's figures on the last day and its chart, as the Whole Portfolio's."""
     series = timeline.accounts[account]
     hurdle = series.hurdles[benchmark] if benchmark else None
     held = [h for h in timeline.units_held if h.account == account]
@@ -149,11 +149,13 @@ def _holding_section(timeline: Timeline, holding: Holding, benchmark: str | None
     }
 
 
-def _overall(timeline: Timeline) -> list[dict[str, Any]]:
-    """The portfolio's value, the amount invested and the inflation hurdles, in CZK."""
+def _whole_portfolio_chart(timeline: Timeline) -> list[dict[str, Any]]:
+    """The Whole Portfolio's value, the amount invested and the inflation hurdles, in CZK."""
     traces = []
-    if timeline.portfolio_value is not None:
-        traces.append(_line(timeline.dates, timeline.portfolio_value, "Portfolio value", VALUE, line={"width": 2.5}))
+    if timeline.whole_portfolio_value is not None:
+        traces.append(
+            _line(timeline.dates, timeline.whole_portfolio_value, "Whole Portfolio value", VALUE, line={"width": 2.5})
+        )
     traces.append(_invested(timeline.dates, timeline.amount_invested))
     for series, hurdle in timeline.hurdles.items():
         traces += _hurdle(timeline.dates, hurdle, series)
@@ -161,7 +163,8 @@ def _overall(timeline: Timeline) -> list[dict[str, Any]]:
 
 
 def _composition(timeline: Timeline, order: Sequence[Holding]) -> list[dict[str, Any]]:
-    """`_overall` with the portfolio value split: Cash at the bottom, then each valued Holding's value, largest on top.
+    """`_whole_portfolio_chart` with its value split: Cash at the bottom, then each valued Holding's value, largest on
+    top.
 
     Each is named by its fund, and by its Account too when the fund is held in more than one.
     """
@@ -187,7 +190,7 @@ def _composition(timeline: Timeline, order: Sequence[Holding]) -> list[dict[str,
 
 
 def _account_chart(timeline: Timeline, account: Account) -> list[dict[str, Any]]:
-    """The Account's value, the amount invested in it and its inflation hurdles, in CZK, as `_overall`."""
+    """The Account's value, the amount invested in it and its inflation hurdles, in CZK, as `_whole_portfolio_chart`."""
     series = timeline.accounts[account]
     traces = []
     if series.value is not None:

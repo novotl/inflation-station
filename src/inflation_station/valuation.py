@@ -67,8 +67,8 @@ class AccountTimeline:
     managed: bool
     # The gross CZK of its Purchases, or its Deposits, dated on or before each day.
     amount_invested: tuple[Decimal, ...]
-    # The sum of the CZK values of its Holdings and its Cash that can be valued, as `Timeline.portfolio_value`; None
-    # when none of them can be.
+    # The sum of the CZK values of its Holdings and its Cash that can be valued, as `Timeline.whole_portfolio_value`;
+    # None when none of them can be.
     value: tuple[Decimal | None, ...] | None
     # The inflation hurdle of its Purchases or Deposits, by price index series.
     hurdles: Mapping[str, Hurdle]
@@ -109,7 +109,7 @@ class Timeline:
     # currency of its latest Purchase (else of its latest buy or sell) when it has none.
     priced_in: Mapping[str, str]
     # The sum of `holding_values` and `cash_values`; None when no fund or Cash can be valued.
-    portfolio_value: tuple[Decimal | None, ...] | None
+    whole_portfolio_value: tuple[Decimal | None, ...] | None
     # Why each fund that can't be valued couldn't be, by ISIN.
     not_valued: Mapping[str, str]
     # The inflation hurdle by price index series, for every series with index levels.
@@ -190,7 +190,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
             holding_values[h] = _zero_when_not_held(units, _times(holding_currency_values[h], czk_per_unit))
     cash = _cash(dates, ledger)
     cash_values, cash_not_valued = _cash_values(cash, czk_rates)
-    portfolio_parts = [*holding_values.values(), *cash_values.values()]
+    whole_portfolio_parts = [*holding_values.values(), *cash_values.values()]
 
     levels_by_series = {
         series: [i for i in index_levels if i.series == series] for series in sorted({i.series for i in index_levels})
@@ -226,7 +226,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
         holding_currency_values=holding_currency_values,
         fund_currencies=fund_currencies,
         priced_in=priced_in,
-        portfolio_value=_sum(portfolio_parts) if portfolio_parts else None,
+        whole_portfolio_value=_sum(whole_portfolio_parts) if whole_portfolio_parts else None,
         not_valued=not_valued,
         hurdles=_hurdles(dates, every_investment, levels_by_series),
         holding_hurdles={h: _hurdles(dates, bought, levels_by_series) for h, bought in bought_in.items()},

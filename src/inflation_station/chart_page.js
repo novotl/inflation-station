@@ -2,7 +2,7 @@
 // Here: layout, colours by trace role (light/dark), private mode, the layout switcher.
 "use strict";
 const D = JSON.parse(document.getElementById("data").textContent);
-const P = D.portfolio;
+const P = D.wholePortfolio;
 
 // ---------- formatting ----------
 const esc = s => String(s).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
@@ -100,12 +100,12 @@ const czkChartOr = (el, item, height) => item.chart.length ? czkChart(el, item.c
 const accountNotes = a => a.notValued ? `<p class="warn">Not valued: ${esc(a.notValued)}</p>`
   : a.leftOut.length ? `<p class="warn">Left out of its value: ${a.leftOut.map(esc).join(", ")}</p>` : "";
 
-// ---------- dashboard: figures, the overall chart, a section per Account, a table of funds whose rows open their chart ----------
+// ---------- dashboard: figures, the Whole Portfolio chart, a section per Account, a table of funds whose rows open their chart ----------
 function renderDashboard(el) {
   const kpi = (label, big, sub = "") => `<div class="kpi"><div class="label">${esc(label)}</div><div class="big">${big}</div><div class="sub">${sub}</div></div>`;
   const signed = (x, html) => `<span class="${cls(x)}">${html}</span>`;
   const gain = minus(P.value, P.invested);
-  el.innerHTML = `<h1>Portfolio</h1><div class="kpis">
+  el.innerHTML = `<h1>Whole Portfolio</h1><div class="kpis">
     ${kpi("Value today", czk(P.value), `<span class="muted">as of ${esc(D.asOf)}</span>`)}
     ${kpi("Invested", czk(P.invested), `<span class="muted">fees included</span>`)}
     ${kpi("Gain", signed(gain, czk(gain)), signed(gain, pct(vs(P.value, P.invested))))}
@@ -161,9 +161,9 @@ function renderRelative(el) {
     <p class="muted">Each line is how far the value is above (+) or below (−) a benchmark, in %; 0 is exactly kept up.
     ${D.estimatedFrom ? `Shaded: ${esc(D.benchmark)} estimated, not published yet.` : ""}</p>
     <div class="kpis">
-      ${D.benchmark ? `<div class="kpi"><div class="label">Portfolio vs ${esc(D.benchmark)}</div><div class="big ${cls(real)}">${pct(real)}</div>
+      ${D.benchmark ? `<div class="kpi"><div class="label">Whole Portfolio vs ${esc(D.benchmark)}</div><div class="big ${cls(real)}">${pct(real)}</div>
         <div class="sub muted">${czk(P.value)} vs hurdle ${czk(P.benchmarkHurdle)}</div></div>` : ""}
-      <div class="kpi"><div class="label">Portfolio vs invested</div><div class="big ${cls(nominal)}">${pct(nominal)}</div>
+      <div class="kpi"><div class="label">Whole Portfolio vs invested</div><div class="big ${cls(nominal)}">${pct(nominal)}</div>
         <div class="sub muted">${czk(P.value)} vs ${czk(P.invested)}</div></div></div>
     <div class="card"><div id="relative-chart"></div></div>
     <h2>Per Account and fund <span class="muted" style="font-size:14px;font-weight:normal">(same scale everywhere)</span></h2>
@@ -195,7 +195,7 @@ function renderFunds(el) {
   el.innerHTML = `<div class="strip-page"><div class="strip"></div><div class="detail"></div></div>`;
   const strip = el.querySelector(".strip"), detail = el.querySelector(".detail");
   const standing = (value, hurdle, invested) => D.benchmark ? `${pct(vs(value, hurdle))} vs ${esc(D.benchmark)}` : `${pct(vs(value, invested))} vs invested`;
-  const items = [{ key: "", name: "Whole portfolio", value: P.value, rel: D.benchmark ? vs(P.value, P.benchmarkHurdle) : vs(P.value, P.invested),
+  const items = [{ key: "", name: "Whole Portfolio", value: P.value, rel: D.benchmark ? vs(P.value, P.benchmarkHurdle) : vs(P.value, P.invested),
     label: standing(P.value, P.benchmarkHurdle, P.invested) }]
     .concat(D.accounts.map(a => ({ key: "a" + a.key, a, name: a.name, value: a.value,
       rel: D.benchmark ? vs(a.value, a.benchmarkHurdle) : vs(a.value, a.invested),
@@ -211,9 +211,9 @@ function renderFunds(el) {
     strip.querySelectorAll(".item").forEach(n => n.onclick = () => { picked = n.dataset.key; draw(); });
     const fact = (label, html) => `<div><b>${esc(label)}</b>${html}</div>`;
     if (!picked) {
-      detail.innerHTML = `<h1>Whole portfolio</h1><div class="facts">${fact("Value", czk(P.value))}${fact("Invested", czk(P.invested))}
+      detail.innerHTML = `<h1>Whole Portfolio</h1><div class="facts">${fact("Value", czk(P.value))}${fact("Invested", czk(P.invested))}
         ${P.hurdles.map(h => fact(`Hurdle (${h.name})`, czk(h.value))).join("")}</div><div></div>`;
-      // Cash and fund values stacked, so the top edge is the portfolio value.
+      // Cash and fund values stacked, so the top edge is the Whole Portfolio value.
       czkChart(detail.lastElementChild, P.composition, height());
     } else if (picked.startsWith("a")) {
       const { a } = items.find(it => it.key === picked);
