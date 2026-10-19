@@ -144,7 +144,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
 
     Each Fee must be on a Purchase in `purchases`, so it is counted in that Purchase's Portfolio and Holding.
     """
-    first = min([p.trade_date for p in purchases] + [e.day for e in ledger])
+    first = min([p.trade_date for p in purchases] + [f.day for f in fees] + [e.day for e in ledger])
     dates = tuple(first + timedelta(days=n) for n in range((today - first).days + 1))
 
     # Only Managed Portfolios have ledgers.

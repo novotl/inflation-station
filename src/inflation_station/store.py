@@ -370,8 +370,8 @@ def _ledger_entry(r: LedgerEntryRecord) -> LedgerEntry:
     return LedgerEntry(**{f.name: getattr(r, f.name) for f in fields(LedgerEntry)})
 
 
-def _fee_record(f: Fee, imported_at: datetime) -> FeeRecord:
-    return FeeRecord(**{field.name: getattr(f, field.name) for field in fields(Fee)}, imported_at=imported_at)
+def _fee_record(fee: Fee, imported_at: datetime) -> FeeRecord:
+    return FeeRecord(**{f.name: getattr(fee, f.name) for f in fields(Fee)}, imported_at=imported_at)
 
 
 def _fee(r: FeeRecord) -> Fee:

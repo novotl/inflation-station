@@ -139,11 +139,12 @@ def chart(data_dir: Path) -> None:
         prices = store.fund_prices()
         rates = store.fx_rates()
         index_levels = store.index_levels()
+        fees = store.fees()
         today = clock.today()
         t = timeline(
             purchases,
             ledger=ledger,
-            fees=store.fees(),
+            fees=fees,
             prices=prices,
             rates=rates,
             index_levels=index_levels,

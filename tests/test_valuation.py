@@ -680,7 +680,7 @@ def test_cash_with_no_rate_yet_has_no_value_unless_there_is_none_of_it() -> None
 
 
 def fee(day: date, czk: str, isin: str = CZK_FUND) -> Fee:
-    """A Fee charged on the Purchase of `isin` traded on `day`."""
+    """A Fee charged on `day` on the J&T Purchase of `isin`."""
     return Fee(
         platform="jt", portfolio_id="900000001", source_row_id=f"{isin}-{day}", day=day, isin=isin, czk=Decimal(czk)
     )
