@@ -556,7 +556,7 @@ def test_each_portfolio_has_the_amount_invested_and_hurdles_of_its_own_purchases
     assert portu.hurdles[CSU_CPI].values[-1] == Decimal(550)
 
 
-def test_an_portfolios_value_is_its_holdings_and_its_cash_in_czk_negative_or_not() -> None:
+def test_a_portfolios_value_is_its_holdings_and_its_cash_in_czk_negative_or_not() -> None:
     t = timeline(
         [purchase(date(2021, 6, 13), "1000", units="2")],
         ledger=[
@@ -579,7 +579,7 @@ def test_an_portfolios_value_is_its_holdings_and_its_cash_in_czk_negative_or_not
     assert t.portfolios[JT].value == t.holding_values[jt(CZK_FUND)]
 
 
-def test_an_portfolio_has_no_value_only_when_nothing_in_it_can_be_valued() -> None:
+def test_a_portfolio_has_no_value_only_when_nothing_in_it_can_be_valued() -> None:
     t = timeline(
         [purchase(date(2021, 6, 13), "1000")],
         ledger=[entry(date(2021, 6, 13), DEPOSIT, "500"), trade(date(2021, 6, 13), "0.04", "-4")],

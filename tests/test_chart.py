@@ -596,7 +596,7 @@ def test_one_fund_in_two_portfolios_is_two_holdings_each_naming_its_portfolio(tm
     }
 
 
-def test_an_portfolio_with_nothing_valued_says_whether_its_funds_or_its_cash_are_missing(tmp_path: Path) -> None:
+def test_a_portfolio_with_nothing_valued_says_whether_its_funds_or_its_cash_are_missing(tmp_path: Path) -> None:
     usd = LedgerEntry(
         "portu", "Cash only", "1", date(2021, 6, 13), DEPOSIT, "", "", Decimal(0), None, Decimal(100), "USD"
     )
