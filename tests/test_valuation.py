@@ -22,7 +22,7 @@ def jt(isin: str) -> Holding:
     return Holding(JT, isin)
 
 
-def purchase(trade_date: date, gross_czk: str, isin: str = CZK_FUND, units: str = "1") -> Purchase:
+def purchase(trade_date: date, czk: str, isin: str = CZK_FUND, units: str = "1") -> Purchase:
     return Purchase(
         platform="jt",
         portfolio_id="900000001",
@@ -33,9 +33,7 @@ def purchase(trade_date: date, gross_czk: str, isin: str = CZK_FUND, units: str 
         units=Decimal(units),
         unit_price=Decimal(1),
         unit_price_currency="CZK",
-        gross_czk=Decimal(gross_czk),
-        fee=Decimal(0),
-        fee_currency="CZK",
+        czk=Decimal(czk),
     )
 
 
@@ -45,7 +43,7 @@ def test_timeline_has_every_day_from_the_first_trade_date_to_today() -> None:
     assert t.dates == (date(2021, 6, 13), date(2021, 6, 14), date(2021, 6, 15), date(2021, 6, 16), date(2021, 6, 17))
 
 
-def test_amount_invested_steps_up_on_each_trade_date_by_the_gross_czk_amount() -> None:
+def test_amount_invested_steps_up_on_each_trade_date_by_the_czk_amount() -> None:
     t = timeline(
         [
             purchase(date(2021, 6, 13), "8000.00"),

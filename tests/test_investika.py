@@ -7,6 +7,7 @@ import pytest
 
 from inflation_station import investika
 from inflation_station.errors import InflationStationError
+from inflation_station.fee import Fee
 from inflation_station.purchase import Purchase
 
 INVESTIKA = Path(__file__).parent / "fixtures" / "investika"
@@ -22,9 +23,7 @@ ISSUES = [
         units=Decimal(2783),
         unit_price=Decimal("1.7603"),
         unit_price_currency="CZK",
-        gross_czk=Decimal("5000.00"),
-        fee=Decimal("101.09"),
-        fee_currency="CZK",
+        czk=Decimal("4898.91"),
     ),
     Purchase(
         platform="investika",
@@ -36,9 +35,26 @@ ISSUES = [
         units=Decimal(7761),
         unit_price=Decimal("1.2883"),
         unit_price_currency="CZK",
-        gross_czk=Decimal("10200.00"),
-        fee=Decimal("201.50"),
-        fee_currency="CZK",
+        czk=Decimal("9998.50"),
+    ),
+]
+# The payment less the issue's Částka: the entry fee and the rounding.
+FEES = [
+    Fee(
+        platform="investika",
+        portfolio_id="1234567890",
+        source_row_id="2026-09-10T11:02:49",
+        day=date(2026, 8, 31),
+        isin="CZ0008474830",
+        czk=Decimal("101.09"),
+    ),
+    Fee(
+        platform="investika",
+        portfolio_id="1234567890",
+        source_row_id="2021-05-10T16:21:05",
+        day=date(2021, 4, 30),
+        isin="CZ0008474830",
+        czk=Decimal("201.50"),
     ),
 ]
 
@@ -47,26 +63,26 @@ def statement(fixture: str) -> investika.Statement:
     return investika.statement(fixture, (INVESTIKA / fixture).read_text(encoding="utf-8").splitlines())
 
 
-def purchases(*fixtures: str | investika.Statement) -> list[Purchase]:
-    """Purchases from fixture files, or from statements a test has changed."""
-    return investika.purchases([statement(f) if isinstance(f, str) else f for f in fixtures])
+def purchases_and_fees(*fixtures: str | investika.Statement) -> tuple[list[Purchase], list[Fee]]:
+    """Purchases and Fees from fixture files, or from statements a test has changed."""
+    return investika.purchases_and_fees([statement(f) if isinstance(f, str) else f for f in fixtures])
 
 
 def fails(*fixtures: str | investika.Statement, error: str) -> None:
     with pytest.raises(InflationStationError, match=f"^{re.escape(error)}$"):
-        purchases(*fixtures)
+        purchases_and_fees(*fixtures)
 
 
-def test_one_purchase_per_issue_with_gross_and_fee_from_the_cash_statement() -> None:
-    assert purchases("cash.txt", "holdings.txt") == ISSUES
+def test_one_purchase_per_issue_and_a_fee_of_the_rest_of_its_payment() -> None:
+    assert purchases_and_fees("cash.txt", "holdings.txt") == (ISSUES, FEES)
 
 
 def test_the_pair_may_be_given_in_either_order() -> None:
-    assert purchases("holdings.txt", "cash.txt") == ISSUES
+    assert purchases_and_fees("holdings.txt", "cash.txt") == (ISSUES, FEES)
 
 
 def test_pending_payment_is_skipped() -> None:
-    assert purchases("cash_pending_payment.txt", "holdings.txt") == ISSUES
+    assert purchases_and_fees("cash_pending_payment.txt", "holdings.txt") == (ISSUES, FEES)
 
 
 def test_issue_with_no_matching_payment_fails() -> None:
@@ -143,7 +159,7 @@ def test_two_statements_of_one_kind_for_a_portfolio_fail() -> None:
 
 
 def test_no_statements_give_no_purchases() -> None:
-    assert investika.purchases([]) == []
+    assert investika.purchases_and_fees([]) == ([], [])
 
 
 def test_payment_smaller_than_the_issue_fails() -> None:
@@ -228,7 +244,7 @@ def test_two_issues_settled_at_the_same_time_fail() -> None:
 def test_malformed_holdings_row_fails(original: str, broken: str, error: str) -> None:
     lines = (INVESTIKA / "holdings.txt").read_text(encoding="utf-8").replace(original, broken, 1).splitlines()
     with pytest.raises(InflationStationError, match=f"^{re.escape(error)}$"):
-        investika.purchases([statement("cash.txt"), investika.statement("holdings.txt", lines)])
+        investika.purchases_and_fees([statement("cash.txt"), investika.statement("holdings.txt", lines)])
 
 
 def test_malformed_cash_amount_fails() -> None:
@@ -240,7 +256,7 @@ def test_malformed_cash_amount_fails() -> None:
             "Částka '5 000,00' is not an amount like '5 000,00 CZK'"
         ),
     ):
-        investika.purchases([investika.statement("cash.txt", lines), statement("holdings.txt")])
+        investika.purchases_and_fees([investika.statement("cash.txt", lines), statement("holdings.txt")])
 
 
 def test_lines_without_a_title_are_not_a_statement() -> None:
@@ -277,4 +293,4 @@ def test_statement_without_a_portfolio_number_fails() -> None:
 def test_malformed_cash_row_fails(original: str, broken: str, error: str) -> None:
     lines = (INVESTIKA / "cash.txt").read_text(encoding="utf-8").replace(original, broken, 1).splitlines()
     with pytest.raises(InflationStationError, match=f"^{re.escape(error)}$"):
-        investika.purchases([investika.statement("cash.txt", lines), statement("holdings.txt")])
+        investika.purchases_and_fees([investika.statement("cash.txt", lines), statement("holdings.txt")])

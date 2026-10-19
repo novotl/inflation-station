@@ -9,9 +9,20 @@ from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Session
 
 from inflation_station.fee import Fee
+from inflation_station.fund_price import FundPrice
+from inflation_station.fx_rate import FxRate
 from inflation_station.ledger import DEPOSIT, LedgerEntry
+from inflation_station.price_index import CSU_CPI, IndexLevel
 from inflation_station.purchase import Purchase
-from inflation_station.store import Added, PurchaseRecord, Store, database_url, engine, migrate
+from inflation_station.store import (
+    Added,
+    LedgerEntryRecord,
+    PurchaseRecord,
+    Store,
+    database_url,
+    engine,
+    migrate,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -26,9 +37,7 @@ PURCHASE = Purchase(
     units=Decimal("5.4100"),
     unit_price=Decimal("1478.74"),
     unit_price_currency="CZK",
-    gross_czk=Decimal("8000.00"),
-    fee=Decimal("0.00"),
-    fee_currency="CZK",
+    czk=Decimal("8000.00"),
 )
 
 DEPOSIT_ENTRY = LedgerEntry(
@@ -76,7 +85,7 @@ def test_naive_timestamps_are_rejected(tmp_path: Path) -> None:
             session.flush()
 
 
-def test_upgrading_a_database_stored_by_account_id_keeps_every_row_under_its_portfolio(tmp_path: Path) -> None:
+def test_upgrading_a_database_stored_by_account_id_keeps_every_ledger_row_under_its_portfolio(tmp_path: Path) -> None:
     url = database_url(tmp_path)
     migrate(url, "0005")
     with engine(url).begin() as connection:
@@ -99,10 +108,8 @@ def test_upgrading_a_database_stored_by_account_id_keeps_every_row_under_its_por
 
     store = Store(tmp_path)
 
-    assert store.purchases() == [PURCHASE]
     assert store.ledger() == [DEPOSIT_ENTRY]
     # Re-importing the same rows adds nothing.
-    assert store.add_purchases([PURCHASE]).added == 0
     assert store.add_ledger_entries([DEPOSIT_ENTRY]).added == 0
 
 
@@ -131,10 +138,53 @@ def test_upgrading_a_database_stored_before_fees_keeps_its_rows_and_stores_fees(
     url = database_url(tmp_path)
     migrate(url, "0006")
     with Session(engine(url)) as session, session.begin():
-        session.add(PurchaseRecord(**vars(PURCHASE), imported_at=datetime(2026, 10, 10, 12, 0, tzinfo=UTC)))
+        session.add(LedgerEntryRecord(**vars(DEPOSIT_ENTRY), imported_at=datetime(2026, 10, 10, 12, 0, tzinfo=UTC)))
 
     store = Store(tmp_path)
 
-    assert store.purchases() == [PURCHASE]
+    assert store.ledger() == [DEPOSIT_ENTRY]
     assert store.fees() == []
     assert store.add_fees([FEE]).added == 1
+
+
+def test_upgrading_a_database_with_fees_inside_purchases_empties_purchases_and_keeps_the_rest(tmp_path: Path) -> None:
+    url = database_url(tmp_path)
+    migrate(url, "0007")
+    with engine(url).begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO purchase (platform, portfolio_id, source_row_id, isin, fund_name, trade_date, units,"
+                " unit_price, unit_price_currency, gross_czk, fee, fee_currency, imported_at)"
+                " VALUES ('jt', '123', '900100001', 'LU1756523376', 'Fund', '2021-06-15', '5.4100', '1478.74', 'CZK',"
+                " '8000.00', '231.24', 'CZK', '2026-10-10 10:00:00.000000')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO ledger_entry (platform, portfolio_id, source_row_id, day, kind, isin, fund_name, units,"
+                " unit_price, amount, currency, imported_at)"
+                " VALUES ('portu', 'Moje portfolio', '12.04.2021;Vklad z bankovního účtu;;1000;CZK;1', '2021-04-12',"
+                " 'deposit', '', '', '0', NULL, '1000', 'CZK', '2026-10-10 10:00:00.000000')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO fund_price (isin, day, price, currency)"
+                " VALUES ('LU1756523376', '2021-06-15', '1478.74', 'CZK')"
+            )
+        )
+        connection.execute(
+            text("INSERT INTO fx_rate (currency, day, czk_per_unit) VALUES ('EUR', '2021-06-15', '25.39')")
+        )
+        connection.execute(
+            text("INSERT INTO price_index (series, month, level) VALUES ('csu_cpi', '2021-06-01', '108.3')")
+        )
+
+    store = Store(tmp_path)
+
+    assert store.purchases() == []
+    assert store.ledger() == [DEPOSIT_ENTRY]
+    assert store.fund_prices() == [FundPrice("LU1756523376", date(2021, 6, 15), Decimal("1478.74"), "CZK")]
+    assert store.fx_rates() == [FxRate("EUR", date(2021, 6, 15), Decimal("25.39"))]
+    assert store.index_levels() == [IndexLevel(CSU_CPI, date(2021, 6, 1), Decimal("108.3"))]
+    assert store.add_purchases([PURCHASE]).added == 1

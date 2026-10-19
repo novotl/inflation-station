@@ -6,11 +6,14 @@ from typing import TYPE_CHECKING
 
 from inflation_station import czech
 from inflation_station.errors import InflationStationError
+from inflation_station.fee import charged_on
 from inflation_station.purchase import Purchase
 
 if TYPE_CHECKING:
     from decimal import Decimal
     from pathlib import Path
+
+    from inflation_station.fee import Fee
 
 PURCHASE_MOVEMENT = "Investice klienta (vklad)"
 CASH_DEPOSIT_PREFIX = "Vklad"
@@ -50,8 +53,11 @@ class RowError(Exception):
     """A problem with one row; read_export adds which file and row."""
 
 
-def read_export(path: Path) -> list[Purchase]:
-    """Return the Purchases in a J&T export. Raises on anything it doesn't understand, so nothing is half-read."""
+def read_export(path: Path) -> tuple[list[Purchase], list[Fee]]:
+    """Return the Purchases in a J&T export and the Fees charged on them.
+
+    Raises on anything it doesn't understand, so nothing is half-read.
+    """
     try:
         with path.open(encoding="utf-8-sig", newline="") as f:
             reader = csv.DictReader(f, delimiter=";")
@@ -59,22 +65,26 @@ def read_export(path: Path) -> list[Purchase]:
             if missing:
                 msg = f"{path.name} is not a J&T export: missing columns {', '.join(missing)}"
                 raise InflationStationError(msg)
-            purchases = []
+            purchases: list[Purchase] = []
+            fees: list[Fee] = []
             for row in reader:
                 try:
-                    purchase = _purchase(row)
+                    bought = _purchase(row)
                 except RowError as e:
                     msg = f"{path.name} row {reader.line_num} ({ROW_ID} {row[ROW_ID]}): {e}"
                     raise InflationStationError(msg) from e
-                if purchase:
+                if bought:
+                    purchase, fee_czk = bought
                     purchases.append(purchase)
+                    fees.extend(charged_on(purchase, fee_czk))
     except (OSError, UnicodeDecodeError, csv.Error) as e:
         msg = f"cannot read {path}: {e}"
         raise InflationStationError(msg) from e
-    return purchases
+    return purchases, fees
 
 
-def _purchase(row: dict[str, str]) -> Purchase | None:
+def _purchase(row: dict[str, str]) -> tuple[Purchase, Decimal] | None:
+    """The Purchase in a row and the CZK of its Fee, or None for a cash deposit."""
     movement_type = row[MOVEMENT_TYPE]
     if _is_cash_deposit(row):
         return None
@@ -84,7 +94,13 @@ def _purchase(row: dict[str, str]) -> Purchase | None:
     if row[PAYMENT_CURRENCY] != "CZK":
         msg = f"payment currency is {row[PAYMENT_CURRENCY]!r}, expected 'CZK'"
         raise RowError(msg)
-    return Purchase(
+    # Paid amounts are negative, and include the fee.
+    paid = -_decimal(row, PAYMENT)
+    fee_czk = _decimal(row, FEE)
+    if fee_czk and row[FEE_CURRENCY] != "CZK":
+        msg = f"fee currency is {row[FEE_CURRENCY]!r}, expected 'CZK'"
+        raise RowError(msg)
+    purchase = Purchase(
         platform="jt",
         portfolio_id=row[PORTFOLIO_ID],
         source_row_id=row[ROW_ID],
@@ -94,11 +110,9 @@ def _purchase(row: dict[str, str]) -> Purchase | None:
         units=_decimal(row, UNITS),
         unit_price=_decimal(row, UNIT_PRICE),
         unit_price_currency=row[UNIT_PRICE_CURRENCY],
-        # Paid amounts are negative; the gross amount includes the fee.
-        gross_czk=-_decimal(row, PAYMENT),
-        fee=_decimal(row, FEE),
-        fee_currency=row[FEE_CURRENCY],
+        czk=paid - fee_czk,
     )
+    return purchase, fee_czk
 
 
 def _is_cash_deposit(row: dict[str, str]) -> bool:

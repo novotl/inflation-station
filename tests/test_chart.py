@@ -12,11 +12,9 @@ from click.testing import CliRunner
 from inflation_station import clock
 from inflation_station.chart import write_chart
 from inflation_station.cli import main
-from inflation_station.fee import Fee
 from inflation_station.fund_price import FundPrice
 from inflation_station.ledger import BUY, DEPOSIT, LedgerEntry
 from inflation_station.purchase import Purchase
-from inflation_station.store import Store
 from inflation_station.valuation import timeline
 
 EXPORT = Path(__file__).parent / "fixtures" / "jt_export.csv"
@@ -167,24 +165,14 @@ def test_amount_invested_is_a_step_line_from_the_first_trade_date_to_today(tmp_p
     assert len(invested["x"]) == len(invested["y"]) == days_28_apr_to_1_jul  # one point per day
 
 
-def test_stored_fees_count_in_the_amount_invested_from_their_own_day(tmp_path: Path) -> None:
+def test_imported_fees_count_in_the_amount_invested_with_their_purchases(tmp_path: Path) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
-    # Charged on the fixture's FF World Purchase traded on 15 Jun 2021.
-    fee = Fee(
-        platform="jt",
-        portfolio_id="900000001",
-        source_row_id="900100003",
-        day=date(2021, 6, 15),
-        isin="LU1756523376",
-        czk=Decimal(100),
-    )
-    Store(tmp_path).add_fees([fee])
     run("--data-dir", tmp_path, "chart")
 
     invested = whole_portfolio_chart(tmp_path)["Amount invested"]
     by_day = dict(zip(invested["x"], invested["y"], strict=True))
-    assert by_day["2021-06-15"] - by_day["2021-06-14"] == 13000 + 100
-    assert invested["y"][-1] == 235000 + 100
+    # The fixture's payments, each a Purchase plus its Fee: 8 000 + 5 000 CZK traded on 15 Jun 2021, of 235 000 CZK.
+    assert (by_day["2021-06-15"] - by_day["2021-06-14"], invested["y"][-1]) == (13000, 235000)
 
 
 def test_chart_makes_no_network_calls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -590,16 +578,14 @@ def ff_world(units: int) -> Purchase:
         units=Decimal(units),
         unit_price=Decimal(10),
         unit_price_currency="CZK",
-        gross_czk=Decimal(units * 10),
-        fee=Decimal(0),
-        fee_currency="CZK",
+        czk=Decimal(units * 10),
     )
 
 
 def test_one_fund_in_two_portfolios_is_two_holdings_each_naming_its_portfolio(tmp_path: Path) -> None:
     bought = ff_world(units=2)
     t = timeline(
-        [bought, replace(bought, portfolio_id="900000002", units=Decimal(3), gross_czk=Decimal(30))],
+        [bought, replace(bought, portfolio_id="900000002", units=Decimal(3), czk=Decimal(30))],
         prices=[FundPrice(isin="LU1756523376", day=date(2021, 6, 13), price=Decimal(10), currency="CZK")],
         today=date(2021, 6, 14),
     )
