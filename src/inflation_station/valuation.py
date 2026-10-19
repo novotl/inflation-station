@@ -245,7 +245,7 @@ def all_fund_names(purchases: Iterable[Purchase], ledger: Iterable[LedgerEntry])
 
 def _account(row: Purchase | LedgerEntry) -> Account:
     """The Account a Purchase or ledger entry is in."""
-    return Account(row.platform, row.account_id)
+    return Account(row.platform, row.portfolio_id)
 
 
 def _holding(entry: LedgerEntry) -> Holding:

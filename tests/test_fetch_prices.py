@@ -60,7 +60,7 @@ def test_fetch_prices_with_an_empty_database_fails_with_a_readable_message(tmp_p
         1,
         "",
         (
-            "Error: no Purchases or Managed Account buys to fetch prices for yet; import first: "
+            "Error: no Purchases or Managed Portfolio buys to fetch prices for yet; import first: "
             "inflation-station import <file>...\n"
         ),
     )

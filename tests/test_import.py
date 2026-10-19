@@ -184,7 +184,7 @@ def test_investika_pair_imports_one_purchase_per_issue(tmp_path: Path) -> None:
     stored = {p.source_row_id: p for p in Store(tmp_path).purchases()}
     assert sorted(stored) == ["2021-05-10T16:21:05", "2026-09-10T11:02:49"]
     issue = stored["2026-09-10T11:02:49"]
-    assert (issue.platform, issue.account_id, issue.fund_name) == (
+    assert (issue.platform, issue.portfolio_id, issue.fund_name) == (
         "investika",
         "1234567890",
         "INVESTIKA realitní fond, otevřený podílový fond - Třída CZK",
@@ -222,7 +222,7 @@ def test_one_investika_statement_alone_fails_and_imports_nothing(tmp_path: Path)
         "",
         (
             "Error: INVESTIKA statements come in pairs with the same Číslo smlouvy: "
-            "contract 1234567890 has a cash statement (cash.pdf) but no holdings statement\n"
+            "Portfolio 1234567890 has a cash statement (cash.pdf) but no holdings statement\n"
         ),
     )
 

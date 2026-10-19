@@ -69,11 +69,11 @@ class Base(DeclarativeBase):
 
 class PurchaseRecord(Base):
     __tablename__ = "purchase"
-    __table_args__ = (UniqueConstraint("platform", "account_id", "source_row_id"),)
+    __table_args__ = (UniqueConstraint("platform", "portfolio_id", "source_row_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     platform: Mapped[str]
-    account_id: Mapped[str]
+    portfolio_id: Mapped[str]
     source_row_id: Mapped[str]
     isin: Mapped[str]
     fund_name: Mapped[str]
@@ -89,11 +89,11 @@ class PurchaseRecord(Base):
 
 class LedgerEntryRecord(Base):
     __tablename__ = "ledger_entry"
-    __table_args__ = (UniqueConstraint("platform", "account_id", "source_row_id"),)
+    __table_args__ = (UniqueConstraint("platform", "portfolio_id", "source_row_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     platform: Mapped[str]
-    account_id: Mapped[str]
+    portfolio_id: Mapped[str]
     source_row_id: Mapped[str]
     day: Mapped[date]
     kind: Mapped[str]
@@ -156,11 +156,11 @@ def engine(url: str) -> Engine:
     return create_engine(url, poolclass=NullPool)
 
 
-def migrate(url: str) -> None:
-    """Bring the database at `url` up to the latest schema."""
+def migrate(url: str, revision: str = "head") -> None:
+    """Bring the database at `url` up to `revision`, by default the latest schema."""
     config = Config(attributes={"url": url})
     config.set_main_option("script_location", str(MIGRATIONS_DIR))
-    command.upgrade(config, "head")
+    command.upgrade(config, revision)
 
 
 class Store:
@@ -178,7 +178,7 @@ class Store:
     def add_purchases(self, purchases: Iterable[Purchase]) -> Added:
         imported_at = datetime.now(UTC)
         purchases = list(purchases)
-        key_columns = (PurchaseRecord.platform, PurchaseRecord.account_id, PurchaseRecord.source_row_id)
+        key_columns = (PurchaseRecord.platform, PurchaseRecord.portfolio_id, PurchaseRecord.source_row_id)
         with Session(self._engine) as session, session.begin():
             stored = session.execute(select(*key_columns).where(tuple_(*key_columns).in_([_key(p) for p in purchases])))
             seen = {tuple(row) for row in stored}
@@ -195,7 +195,7 @@ class Store:
     def add_ledger_entries(self, entries: Iterable[LedgerEntry]) -> Added:
         imported_at = datetime.now(UTC)
         entries = list(entries)
-        key_columns = (LedgerEntryRecord.platform, LedgerEntryRecord.account_id, LedgerEntryRecord.source_row_id)
+        key_columns = (LedgerEntryRecord.platform, LedgerEntryRecord.portfolio_id, LedgerEntryRecord.source_row_id)
         with Session(self._engine) as session, session.begin():
             stored = session.execute(select(*key_columns).where(tuple_(*key_columns).in_([_key(e) for e in entries])))
             seen = {tuple(row) for row in stored}
@@ -301,13 +301,13 @@ class Store:
 
 def _key(row: Purchase | LedgerEntry) -> tuple[str, str, str]:
     """What identifies an imported row."""
-    return (row.platform, row.account_id, row.source_row_id)
+    return (row.platform, row.portfolio_id, row.source_row_id)
 
 
 def _record(p: Purchase, imported_at: datetime) -> PurchaseRecord:
     return PurchaseRecord(
         platform=p.platform,
-        account_id=p.account_id,
+        portfolio_id=p.portfolio_id,
         source_row_id=p.source_row_id,
         isin=p.isin,
         fund_name=p.fund_name,
