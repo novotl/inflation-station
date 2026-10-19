@@ -107,7 +107,7 @@ def test_unknown_cash_transaction_type_fails() -> None:
     )
 
 
-def test_mismatched_contract_numbers_fail() -> None:
+def test_statements_of_different_portfolios_fail() -> None:
     fails(
         "cash.txt",
         "holdings_other_contract.txt",
@@ -130,7 +130,7 @@ def test_only_one_statement_of_the_pair_fails(fixture: str, error: str) -> None:
     fails(fixture, error=f"INVESTIKA statements come in pairs with the same Číslo smlouvy: {error}")
 
 
-def test_two_statements_of_one_kind_for_a_contract_fail() -> None:
+def test_two_statements_of_one_kind_for_a_portfolio_fail() -> None:
     fails(
         "cash.txt",
         "cash_pending_payment.txt",
@@ -254,7 +254,7 @@ def test_lines_without_a_title_are_not_a_statement() -> None:
         investika.statement("x.pdf", ["", "  Something else", "Číslo smlouvy:", "1"])
 
 
-def test_statement_without_a_contract_number_fails() -> None:
+def test_statement_without_a_portfolio_number_fails() -> None:
     with pytest.raises(InflationStationError, match=re.escape("x.pdf has no Číslo smlouvy")):
         investika.statement("x.pdf", ["  Pohyby na peněžním účtu", ""])
 

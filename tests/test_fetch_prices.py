@@ -260,7 +260,7 @@ PORTU_REPORT = (
 )
 
 
-def test_fetch_prices_stores_yahoo_closes_for_funds_held_in_a_managed_account(tmp_path: Path) -> None:
+def test_fetch_prices_stores_yahoo_closes_for_funds_held_in_a_managed_portfolio(tmp_path: Path) -> None:
     run("--data-dir", tmp_path, "import", PORTU_EXPORT)
 
     code, stdout, _ = run("--data-dir", tmp_path, "fetch-prices")

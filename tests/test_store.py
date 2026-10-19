@@ -74,7 +74,7 @@ def test_naive_timestamps_are_rejected(tmp_path: Path) -> None:
             session.flush()
 
 
-def test_upgrading_a_database_of_accounts_keeps_every_row_under_its_portfolio(tmp_path: Path) -> None:
+def test_upgrading_a_database_stored_by_account_id_keeps_every_row_under_its_portfolio(tmp_path: Path) -> None:
     url = database_url(tmp_path)
     migrate(url, "0005")
     with engine(url).begin() as connection:
