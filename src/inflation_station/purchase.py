@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class Purchase:
-    """A buy of fund units, independent of the platform it was imported from.
+    """A buy of fund units, independent of the platform it was imported from. Any Fee charged on it is a Fee of its own.
 
     (platform, portfolio_id, source_row_id) identifies the source row, so re-imports never duplicate it.
     """
@@ -23,9 +23,8 @@ class Purchase:
     units: Decimal
     unit_price: Decimal
     unit_price_currency: str
-    gross_czk: Decimal
-    fee: Decimal
-    fee_currency: str
+    # The CZK that bought the units, without the Fee.
+    czk: Decimal
 
 
 def fund_names(purchases: Iterable[Purchase]) -> dict[str, str]:

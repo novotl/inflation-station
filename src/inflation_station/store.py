@@ -82,9 +82,7 @@ class PurchaseRecord(Base):
     units: Mapped[Decimal]
     unit_price: Mapped[Decimal]
     unit_price_currency: Mapped[str]
-    gross_czk: Mapped[Decimal]
-    fee: Mapped[Decimal]
-    fee_currency: Mapped[str]
+    czk: Mapped[Decimal]
     imported_at: Mapped[datetime]
 
 
@@ -351,9 +349,7 @@ def _record(p: Purchase, imported_at: datetime) -> PurchaseRecord:
         units=p.units,
         unit_price=p.unit_price,
         unit_price_currency=p.unit_price_currency,
-        gross_czk=p.gross_czk,
-        fee=p.fee,
-        fee_currency=p.fee_currency,
+        czk=p.czk,
         imported_at=imported_at,
     )
 

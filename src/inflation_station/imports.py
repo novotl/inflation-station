@@ -30,6 +30,7 @@ class Imported:
 def read_files(paths: Iterable[Path]) -> Imported:
     """Read J&T and Portu exports (CSV) and INVESTIKA statement pairs (PDF). Raises if any file fails to read."""
     purchases: list[Purchase] = []
+    fees: list[Fee] = []
     ledger: list[LedgerEntry] = []
     statements = []
     for path in paths:
@@ -38,9 +39,11 @@ def read_files(paths: Iterable[Path]) -> Imported:
         elif portu.is_export(path):
             ledger.extend(portu.read_export(path))
         else:
-            purchases.extend(jt.read_export(path))
-    # No export's Fees are read yet.
-    return Imported(purchases=purchases + investika.purchases(statements), fees=[], ledger=ledger)
+            jt_purchases, jt_fees = jt.read_export(path)
+            purchases.extend(jt_purchases)
+            fees.extend(jt_fees)
+    investika_purchases, investika_fees = investika.purchases_and_fees(statements)
+    return Imported(purchases=purchases + investika_purchases, fees=fees + investika_fees, ledger=ledger)
 
 
 def _is_pdf(path: Path) -> bool:

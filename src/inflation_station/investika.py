@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from pypdf import PdfReader
 from pypdf.errors import PyPdfError
 
-from inflation_station import czech
+from inflation_station import czech, fee
 from inflation_station.errors import InflationStationError
 from inflation_station.purchase import Purchase
 
@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from decimal import Decimal
     from pathlib import Path
+
+    from inflation_station.fee import Fee
 
 CASH = "Pohyby na peněžním účtu"
 HOLDINGS = "Transakce na majetkovém účtu"
@@ -100,19 +102,25 @@ def _portfolio(name: str, lines: list[str]) -> str:
     raise InflationStationError(msg)
 
 
-def purchases(statements: Iterable[Statement]) -> list[Purchase]:
-    """One Purchase per issue of units, from statements that pair up by Portfolio. Raises on anything unknown."""
-    result = []
+def purchases_and_fees(statements: Iterable[Statement]) -> tuple[list[Purchase], list[Fee]]:
+    """One Purchase per issue of units, and the Fee charged on it, from statements that pair up by Portfolio.
+
+    Raises on anything unknown.
+    """
+    purchases: list[Purchase] = []
+    fees: list[Fee] = []
     for cash, holdings in _pairs(statements):
         payments = _Payments(cash)
         row_ids: set[str] = set()
         for cells, next_cells in _holdings_rows(holdings):
             try:
-                result.append(_claim_row_id(_purchase(holdings.portfolio, cells, next_cells, payments), row_ids))
+                purchase, fee_czk = _purchase(holdings.portfolio, cells, next_cells, payments)
+                purchases.append(_claim_row_id(purchase, row_ids))
             except RowError as e:
                 msg = f"{holdings.name} row {cells[2]!r} ordered {cells[-1]}: {e}"
                 raise InflationStationError(msg) from e
-    return result
+            fees.extend(fee.charged_on(purchase, fee_czk))
+    return purchases, fees
 
 
 def _pairs(statements: Iterable[Statement]) -> list[tuple[Statement, Statement]]:
@@ -188,7 +196,7 @@ class _Payments:
 
 
 def _is_skipped(description: str) -> bool:
-    """Deposits, and the fee, rounding and fund lines: gross and fee come from the payment, which they're part of."""
+    """Deposits, and the fee, rounding and fund lines: the payment they're part of gives the Purchase and its Fee."""
     return (
         description in {DEPOSIT, ROUNDING}
         or description.startswith(FEE_PREFIX)
@@ -206,8 +214,8 @@ def _holdings_rows(holdings: Statement) -> list[tuple[list[str], list[str]]]:
     ]
 
 
-def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments: _Payments) -> Purchase:
-    """The Purchase in a holdings row, claiming the payment it was bought with."""
+def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments: _Payments) -> tuple[Purchase, Decimal]:
+    """The Purchase in a holdings row and the CZK of its Fee, claiming the payment it was bought with."""
     if cells[2] != ISSUE:
         msg = "unknown transaction type"
         raise RowError(msg)
@@ -227,10 +235,10 @@ def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments:
         msg = f"Částka is in {net_currency!r}, expected 'CZK'"
         raise RowError(msg)
 
-    gross, gross_as_written = payments.claim(_date(ordered, "Datum pokynu"))
+    paid, paid_as_written = payments.claim(_date(ordered, "Datum pokynu"))
     net_amount = _decimal(net, "Částka")
-    if gross < net_amount:
-        msg = f"payment {gross_as_written} is less than the issue's Částka {net}"
+    if paid < net_amount:
+        msg = f"payment {paid_as_written} is less than the issue's Částka {net}"
         raise RowError(msg)
 
     try:
@@ -238,7 +246,7 @@ def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments:
     except ValueError as e:
         msg = f"Datum vypořádání {settled!r} {settled_time!r} is not a date and time like '31.12.2026' '23:59:59'"
         raise RowError(msg) from e
-    return Purchase(
+    purchase = Purchase(
         platform="investika",
         portfolio_id=portfolio,
         source_row_id=settled_at.isoformat(),
@@ -249,11 +257,10 @@ def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments:
         units=_decimal(units, "Počet kusů"),
         unit_price=_decimal(unit_price, "Cena / kus"),
         unit_price_currency=unit_price_currency,
-        gross_czk=gross,
-        # The payment less what bought units: the entry fee and the rounding.
-        fee=gross - net_amount,
-        fee_currency="CZK",
+        czk=net_amount,
     )
+    # The Fee is the payment less what bought units: the entry fee and the rounding.
+    return purchase, paid - net_amount
 
 
 def _claim_row_id(purchase: Purchase, row_ids: set[str]) -> Purchase:

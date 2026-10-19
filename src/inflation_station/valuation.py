@@ -40,7 +40,7 @@ class Hurdle:
     A value is None on a day the index is unknown for a Purchase, Fee or Deposit counted that day.
     """
 
-    # Σ CZK x I(day) / I(date), over the gross CZK of Purchases, the Fees and the Deposits dated on or before the day.
+    # Σ CZK x I(day) / I(date), over the CZK of Purchases, the Fees and the Deposits dated on or before the day.
     values: tuple[Decimal | None, ...]
     # The first day whose index leans on an estimated month: the day after the last published month starts.
     estimated_from: date
@@ -66,7 +66,7 @@ class PortfolioTimeline:
 
     # Whether it is a Managed Portfolio: one whose money invested is its Deposits, not Purchases (ADR-0002).
     managed: bool
-    # The gross CZK of its Purchases plus its Fees, or its Deposits, dated on or before each day.
+    # The CZK of its Purchases plus its Fees, or its Deposits, dated on or before each day.
     amount_invested: tuple[Decimal, ...]
     # The sum of the CZK values of its Holdings and its Cash that can be valued, as `Timeline.whole_portfolio_value`;
     # None when none of them can be.
@@ -85,7 +85,7 @@ class Timeline:
     """
 
     dates: tuple[date, ...]
-    # The gross CZK of Purchases plus the Fees and the Deposits dated on or before each day; Fees count as invested, so
+    # The CZK of Purchases plus the Fees and the Deposits dated on or before each day; Fees count as invested, so
     # they count against the return.
     amount_invested: tuple[Decimal, ...]
     # Every Portfolio purchased in or with a ledger, by Portfolio.
@@ -202,7 +202,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
         series: [i for i in index_levels if i.series == series] for series in sorted({i.series for i in index_levels})
     }
     invested_in = {
-        a: [(p.trade_date, p.gross_czk) for p in purchases if _portfolio(p) == a]
+        a: [(p.trade_date, p.czk) for p in purchases if _portfolio(p) == a]
         + [(f.day, f.czk) for f in fees if _portfolio(f) == a]
         + [(e.day, e.amount) for e in ledger if e.kind == DEPOSIT and _portfolio(e) == a]
         for a in sorted({_portfolio(p) for p in purchases} | managed)
@@ -222,7 +222,7 @@ def timeline(  # noqa: PLR0913 - every input but the Purchases is keyword-only
         )
     every_investment = [i for invested in invested_in.values() for i in invested]
     bought_in = {
-        h: [(p.trade_date, p.gross_czk) for p in purchased[h]]
+        h: [(p.trade_date, p.czk) for p in purchased[h]]
         + [(f.day, f.czk) for f in fees if Holding(_portfolio(f), f.isin) == h]
         for h in holdings
         if h.portfolio not in managed
