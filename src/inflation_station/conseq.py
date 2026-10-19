@@ -27,7 +27,7 @@ _SHARED_STRINGS = "xl/sharedStrings.xml"
 _NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 _COLUMNS = "ABC"
 _HEADER = ["Datum", "Cena", "Měna"]
-# Excel stores dates as days since this one (which accounts for Excel's phantom 29 Feb 1900).
+# Excel stores dates as days since this one (which allows for Excel's phantom 29 Feb 1900).
 _EXCEL_EPOCH = date(1899, 12, 30)
 
 

@@ -20,6 +20,10 @@ _Avoid_: total, everything, overall
 A buy of fund units that you chose to make, paid in CZK. On Platforms where you pick the funds, each Purchase's gross CZK is money invested.
 _Avoid_: trade, order, transaction
 
+**Fee**:
+CZK a Platform charged you on a Purchase, outside a Managed Portfolio, on the Holding the Purchase was of. It is money invested but never part of any Value: it is money gone, so it counts against the return. Fees in a Managed Portfolio are paid from its Cash and are not money invested.
+_Avoid_: charge, commission, poplatek
+
 **Managed Portfolio**:
 A Portfolio where you only put CZK in and the Platform decides what to buy, sell, hedge and charge (Portu). Its buys and sells are not Purchases.
 _Avoid_: robo-advisor portfolio, managed account
@@ -44,7 +48,7 @@ _Avoid_: publisher, price provider
 What Holdings and Cash are worth in CZK on a day, at the last known fund price and ČNB rate.
 
 **Amount invested**:
-The CZK you put in on or before a day: the gross CZK of Purchases plus the Deposits into Managed Portfolios. Fees count as invested, so they count against the return.
+The CZK you put in on or before a day: the gross CZK of Purchases plus the Fees and the Deposits into Managed Portfolios.
 
 **Inflation hurdle**:
-What the amount invested would need to be worth on a day to keep its purchasing power, by one price index, with each Purchase or Deposit grown from its own date.
+What the amount invested would need to be worth on a day to keep its purchasing power, by one price index, with each Purchase, Fee or Deposit grown from its own date.

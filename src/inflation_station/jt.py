@@ -18,7 +18,7 @@ CASH_DEPOSIT_PREFIX = "Vklad"
 # The columns read from the export, each named once.
 MOVEMENT_TYPE = "Typ pohybu"
 ROW_ID = "ID pohybu"
-ACCOUNT_ID = "Portfolio"
+PORTFOLIO_ID = "Portfolio"
 ISIN = "ISIN"
 FUND_NAME = "Název CP"
 TRADE_DATE = "Datum a čas zobchodování"
@@ -32,7 +32,7 @@ FEE_CURRENCY = "Měna poplatku (v měně obchodu)"
 COLUMNS = (
     MOVEMENT_TYPE,
     ROW_ID,
-    ACCOUNT_ID,
+    PORTFOLIO_ID,
     ISIN,
     FUND_NAME,
     TRADE_DATE,
@@ -86,7 +86,7 @@ def _purchase(row: dict[str, str]) -> Purchase | None:
         raise RowError(msg)
     return Purchase(
         platform="jt",
-        account_id=row[ACCOUNT_ID],
+        portfolio_id=row[PORTFOLIO_ID],
         source_row_id=row[ROW_ID],
         isin=row[ISIN],
         fund_name=row[FUND_NAME],
