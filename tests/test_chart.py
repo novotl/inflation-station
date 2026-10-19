@@ -56,7 +56,7 @@ def by_name(traces: list[dict]) -> dict[str, dict]:
     return {trace["name"]: trace for trace in traces}
 
 
-def overall(data_dir: Path) -> dict[str, dict]:
+def whole_portfolio_chart(data_dir: Path) -> dict[str, dict]:
     """The Whole Portfolio chart's traces by name: its value, the amount invested and the hurdles."""
     return by_name(page(data_dir)["wholePortfolio"]["chart"])
 
@@ -97,7 +97,7 @@ def test_chart_before_fetching_prices_names_the_funds_it_could_not_value(tmp_pat
         "FTIF-Franklin Technology Fund-A(acc)EUR (LU0260870158), FF - World Fund A-ACC-CZK (LU1756523376), "
         "AMUNDI FUNDS US PIONEER FUND - A EUR (C) (LU1883872332)\n"
     )
-    assert set(overall(tmp_path)) == set(composition(tmp_path)) == {"Amount invested"}
+    assert set(whole_portfolio_chart(tmp_path)) == set(composition(tmp_path)) == {"Amount invested"}
     assert page(tmp_path)["wholePortfolio"]["value"] is None
     assert page(tmp_path)["wholePortfolio"]["relative"] == []
 
@@ -109,7 +109,7 @@ def test_after_fetching_prices_the_chart_has_a_whole_portfolio_line_and_stacks_e
     run("--data-dir", tmp_path, "fetch-prices")
     run("--data-dir", tmp_path, "chart")
 
-    lines = overall(tmp_path)
+    lines = whole_portfolio_chart(tmp_path)
     assert set(lines) == {"Amount invested", "Whole Portfolio value"}
     assert lines["Whole Portfolio value"]["y"][-1] == pytest.approx(FF_WORLD + JT_MONEY)
     assert len(lines["Whole Portfolio value"]["y"]) == len(lines["Amount invested"]["y"])
@@ -147,14 +147,16 @@ def test_after_fetching_prices_and_rates_the_chart_values_every_fund_in_czk(tmp_
     }
     assert lines["FTIF-Franklin Technology Fund-A(acc)EUR"]["y"][-1] == pytest.approx(FRANKLIN)
     assert lines["AMUNDI FUNDS US PIONEER FUND - A EUR (C)"]["y"][-1] == pytest.approx(AMUNDI)
-    assert overall(tmp_path)["Whole Portfolio value"]["y"][-1] == pytest.approx(FF_WORLD + JT_MONEY + FRANKLIN + AMUNDI)
+    assert whole_portfolio_chart(tmp_path)["Whole Portfolio value"]["y"][-1] == pytest.approx(
+        FF_WORLD + JT_MONEY + FRANKLIN + AMUNDI
+    )
 
 
 def test_amount_invested_is_a_step_line_from_the_first_trade_date_to_today(tmp_path: Path) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
     run("--data-dir", tmp_path, "chart")
 
-    invested = overall(tmp_path)["Amount invested"]
+    invested = whole_portfolio_chart(tmp_path)["Amount invested"]
     assert invested["line"]["shape"] == "hv"
     # The fixture's first trade is 104 000 CZK on 28.04.2021; its seven Purchases total 235 000 CZK.
     assert (invested["x"][0], invested["y"][0]) == ("2021-04-28", 104000)
@@ -199,7 +201,7 @@ def test_after_fetching_cpi_the_chart_has_a_solid_hurdle_line_and_a_dotted_estim
     run("--data-dir", tmp_path, "fetch-cpi")
     run("--data-dir", tmp_path, "chart")
 
-    lines = overall(tmp_path)
+    lines = whole_portfolio_chart(tmp_path)
     published, estimated = lines["Inflation hurdle (ČSÚ CPI)"], lines["Inflation hurdle (ČSÚ CPI, estimated)"]
     assert published["line"]["dash"] == "solid"
     assert estimated["line"]["dash"] == "dot"
@@ -221,7 +223,7 @@ def test_after_fetching_cpi_the_chart_has_a_dashed_eurostat_hurdle_line_and_a_do
     run("--data-dir", tmp_path, "fetch-cpi")
     run("--data-dir", tmp_path, "chart")
 
-    lines = overall(tmp_path)
+    lines = whole_portfolio_chart(tmp_path)
     published, estimated = (
         lines["Inflation hurdle (Eurostat HICP)"],
         lines["Inflation hurdle (Eurostat HICP, estimated)"],
@@ -242,7 +244,7 @@ def test_each_line_has_the_role_that_colours_it_the_same_on_every_chart(tmp_path
     run("--data-dir", tmp_path, "chart")
 
     data = page(tmp_path)
-    assert {name: line.get("meta") for name, line in overall(tmp_path).items()} == {
+    assert {name: line.get("meta") for name, line in whole_portfolio_chart(tmp_path).items()} == {
         "Whole Portfolio value": "value",
         "Amount invested": "invested",
         "Inflation hurdle (ČSÚ CPI)": "inflation",
@@ -334,7 +336,7 @@ def test_chart_names_each_out_of_date_series_and_its_last_date_but_is_still_writ
     )
     # The page shows the same warnings.
     assert page(tmp_path)["warnings"] == [line.removeprefix("Out of date: ") for line in stderr.splitlines()]
-    assert overall(tmp_path)["Amount invested"]["x"][-1] == "2021-08-02"
+    assert whole_portfolio_chart(tmp_path)["Amount invested"]["x"][-1] == "2021-08-02"
 
 
 def test_chart_warns_only_of_the_series_that_are_out_of_date(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -368,7 +370,7 @@ def test_whole_portfolio_invested_and_hurdle_lines_hover_with_their_czk_value_on
     fetch_everything(tmp_path)
     run("--data-dir", tmp_path, "chart")
 
-    lines = overall(tmp_path)
+    lines = whole_portfolio_chart(tmp_path)
     for name in ("Whole Portfolio value", "Amount invested", "Inflation hurdle (ČSÚ CPI)"):
         assert lines[name]["hovertemplate"] == "%{y:,.2f} CZK"
         assert "customdata" not in lines[name]
@@ -489,7 +491,7 @@ def test_each_account_has_a_section_headed_by_its_platform_and_name_largest_valu
         "USD Cash (no USD rates stored)",
     ]
     assert jt["leftOut"] == []
-    # Styled like the overall chart: value, amount invested and both hurdles, each in its role.
+    # Styled like the Whole Portfolio chart: value, amount invested and both hurdles, each in its role.
     assert {name: line["meta"] for name, line in by_name(jt["chart"]).items()} == {
         "Value": "value",
         "Amount invested": "invested",

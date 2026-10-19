@@ -77,7 +77,7 @@ def _page_data(timeline: Timeline, warnings: Sequence[str]) -> dict[str, Any]:
             "invested": _last(timeline.amount_invested),
             "hurdles": [{"name": NAMES[series], "value": _last(h.values)} for series, h in timeline.hurdles.items()],
             "benchmarkHurdle": _last(hurdle.values) if hurdle else None,
-            "chart": _overall(timeline),
+            "chart": _whole_portfolio_chart(timeline),
             "composition": _composition(timeline, order),
             "relative": _relative(timeline.dates, timeline.whole_portfolio_value, timeline.amount_invested, hurdle),
         },
@@ -149,7 +149,7 @@ def _holding_section(timeline: Timeline, holding: Holding, benchmark: str | None
     }
 
 
-def _overall(timeline: Timeline) -> list[dict[str, Any]]:
+def _whole_portfolio_chart(timeline: Timeline) -> list[dict[str, Any]]:
     """The Whole Portfolio's value, the amount invested and the inflation hurdles, in CZK."""
     traces = []
     if timeline.whole_portfolio_value is not None:
@@ -163,8 +163,8 @@ def _overall(timeline: Timeline) -> list[dict[str, Any]]:
 
 
 def _composition(timeline: Timeline, order: Sequence[Holding]) -> list[dict[str, Any]]:
-    """`_overall` with the Whole Portfolio value split: Cash at the bottom, then each valued Holding's value, largest
-    on top.
+    """`_whole_portfolio_chart` with its value split: Cash at the bottom, then each valued Holding's value, largest on
+    top.
 
     Each is named by its fund, and by its Account too when the fund is held in more than one.
     """
@@ -190,7 +190,7 @@ def _composition(timeline: Timeline, order: Sequence[Holding]) -> list[dict[str,
 
 
 def _account_chart(timeline: Timeline, account: Account) -> list[dict[str, Any]]:
-    """The Account's value, the amount invested in it and its inflation hurdles, in CZK, as `_overall`."""
+    """The Account's value, the amount invested in it and its inflation hurdles, in CZK, as `_whole_portfolio_chart`."""
     series = timeline.accounts[account]
     traces = []
     if series.value is not None:

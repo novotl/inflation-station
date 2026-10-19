@@ -57,7 +57,7 @@ h2 { font-size: 18px; letter-spacing: -.01em; margin: 32px 0 12px; font-weight: 
 .view { display: none; max-width: 1480px; margin: 0 auto; padding: 28px 24px 48px; }
 .view.active { display: block; }
 
-/* Dashboard: figures, the overall chart, a table of funds whose rows open their chart. */
+/* Dashboard: figures, the Whole Portfolio chart, a table of funds whose rows open their chart. */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin: 0 0 20px; }
 .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
   padding: 16px 18px; }
@@ -76,7 +76,7 @@ table.funds tr.row:hover { background: var(--hover); }
 table.funds tr.row.open { background: var(--accent-soft); }
 table.funds td.pos, table.funds td.neg { font-weight: 600; }
 
-/* A section per Account, styled like the overall chart above it. */
+/* A section per Account, styled like the Whole Portfolio chart above it. */
 .account-cards h3 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
 
 /* Relative to inflation: the Whole Portfolio, then a small chart per fund on one scale. */

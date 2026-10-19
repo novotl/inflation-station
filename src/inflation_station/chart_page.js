@@ -100,7 +100,7 @@ const czkChartOr = (el, item, height) => item.chart.length ? czkChart(el, item.c
 const accountNotes = a => a.notValued ? `<p class="warn">Not valued: ${esc(a.notValued)}</p>`
   : a.leftOut.length ? `<p class="warn">Left out of its value: ${a.leftOut.map(esc).join(", ")}</p>` : "";
 
-// ---------- dashboard: figures, the overall chart, a section per Account, a table of funds whose rows open their chart ----------
+// ---------- dashboard: figures, the Whole Portfolio chart, a section per Account, a table of funds whose rows open their chart ----------
 function renderDashboard(el) {
   const kpi = (label, big, sub = "") => `<div class="kpi"><div class="label">${esc(label)}</div><div class="big">${big}</div><div class="sub">${sub}</div></div>`;
   const signed = (x, html) => `<span class="${cls(x)}">${html}</span>`;
