@@ -1,11 +1,12 @@
 """Reads INVESTIKA's PDF statements, which come in pairs per Portfolio: a contract, numbered by its Číslo smlouvy.
 
-The cash statement lists the money paid in; the holdings statement lists the units issued for it. Their text, extracted
-with the layout kept, has one table row per line (two for a holdings row, whose fund name wraps), its columns separated
-by runs of spaces.
+The cash statement lists the money deposited and paid for investment; the holdings statement lists the units issued
+for it. Their text, extracted with the layout kept, has one table row per line (two for a holdings row, whose fund name
+wraps), its columns separated by runs of spaces.
 """
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import TYPE_CHECKING, NamedTuple
@@ -15,7 +16,7 @@ from pypdf.errors import PyPdfError
 
 from inflation_station import czech
 from inflation_station.currency import CZK
-from inflation_station.domain import Fee, Fund, Platform, Portfolio, Purchase, Rows
+from inflation_station.domain import Deposit, Fee, Fund, Platform, Portfolio, Purchase, Rows
 from inflation_station.errors import InflationStationError
 
 if TYPE_CHECKING:
@@ -44,6 +45,7 @@ _ISIN = re.compile(r"[A-Z]{2}[A-Z0-9]{9}\d")
 _DATE = re.compile(r"\d{2}\.\d{2}\.\d{4}")
 _CASH_DATE = re.compile(r"(?P<date>\d{2}\.\d{2}\.\d{4})( \d{2}:\d{2}:\d{2})?")
 _CASH_AMOUNT = re.compile(r"(?P<amount>.+) CZK")
+_AMOUNT_AND_CURRENCY = re.compile(r"(?P<amount>.+) (?P<currency>[A-Z]{3})")
 _CURRENCY = re.compile(r"[A-Z]{3}")
 _TIME = re.compile(r"\d{2}:\d{2}:\d{2}")
 
@@ -102,19 +104,21 @@ def _portfolio(name: str, lines: list[str]) -> str:
     raise InflationStationError(msg)
 
 
-def purchases_and_fees(statements: Iterable[Statement]) -> Rows:
-    """One Purchase per issue of units, and the Fee charged on it, from statements that pair up by Portfolio.
+def rows(statements: Iterable[Statement]) -> Rows:
+    """Deposits, a Purchase per issue of units and the Fee charged on it, from statements that pair up by Portfolio.
 
     Raises on anything unknown.
     """
+    deposits: list[Deposit] = []
     purchases: list[Purchase] = []
     fees: list[Fee] = []
     for cash, holdings in _pairs(statements):
-        payments = _Payments(cash)
+        cash_rows = _Cash(cash, _contract(cash.portfolio))
+        deposits += cash_rows.deposits
         row_ids: set[str] = set()
         for cells, next_cells in _holdings_rows(holdings):
             try:
-                purchase, fee = _purchase(holdings.portfolio, cells, next_cells, payments)
+                purchase, fee = _purchase(holdings.portfolio, cells, next_cells, cash_rows)
                 purchases.append(_claim_row_id(purchase, row_ids))
             except RowError as e:
                 msg = f"{holdings.name} row {cells[2]!r} ordered {cells[-1]}: {e}"
@@ -122,7 +126,12 @@ def purchases_and_fees(statements: Iterable[Statement]) -> Rows:
             if fee:
                 # The Fee's identity is its Purchase's: one row of the holdings statement.
                 fees.append(Fee(purchase.portfolio, purchase.source_row_id, purchase.day, fee, CZK))
-    return Rows(purchases=purchases, fees=fees)
+    return Rows(deposits=deposits, purchases=purchases, fees=fees)
+
+
+def _contract(number: str) -> Portfolio:
+    """A Portfolio per contract, named by its number."""
+    return Portfolio(Platform.INVESTIKA, key=number, name=number)
 
 
 def _pairs(statements: Iterable[Statement]) -> list[tuple[Statement, Statement]]:
@@ -148,12 +157,15 @@ def _pairs(statements: Iterable[Statement]) -> list[tuple[Statement, Statement]]
     return [(kinds[CASH][0], kinds[HOLDINGS][0]) for kinds in by_portfolio.values()]
 
 
-class _Payments:
-    """The cash statement's payments for investment, each claimed by the one issue ordered on its day."""
+class _Cash:
+    """The cash statement's Deposits, and its payments for investment, each claimed by the issue ordered on its day."""
 
-    def __init__(self, cash: Statement) -> None:
-        """Read the payments; raises on rows it doesn't know."""
+    def __init__(self, cash: Statement, portfolio: Portfolio) -> None:
+        """Read the Deposits and payments; raises on rows it doesn't know."""
         self._cash_name = cash.name
+        self._portfolio = portfolio
+        self.deposits: list[Deposit] = []
+        self._deposit_counts: Counter[tuple[str, str]] = Counter()
         self._by_day: dict[date, list[_Payment]] = {}
         self._claimed: set[date] = set()
         for line in cash.lines:
@@ -164,11 +176,15 @@ class _Payments:
             if len(cells) not in {4, 5}:  # date, description, [symbol], type, amount
                 msg = f"{cash.name} row on {cells[0]}: has {len(cells)} columns, expected 4 or 5"
                 raise InflationStationError(msg)
+            row = f"{cash.name} row {cells[1]!r} on {cells[0]}"
             try:
                 self._read_row(match["date"], cells[1], cells[-2], cells[-1])
             except RowError as e:
-                msg = f"{cash.name} row {cells[1]!r} on {cells[0]}: {e}"
+                msg = f"{row}: {e}"
                 raise InflationStationError(msg) from e
+            except NotImplementedError as e:
+                msg = f"{row}: {e}"
+                raise NotImplementedError(msg) from e
 
     def _read_row(self, day: str, description: str, kind: str, amount_cell: str) -> None:
         if description == PAYMENT:
@@ -177,9 +193,29 @@ class _Payments:
                 raise RowError(msg)
             amount = _cash_amount(amount_cell)
             self._by_day.setdefault(_date(day, "Datum"), []).append(_Payment(_decimal(amount, "Částka"), amount))
+        elif description == DEPOSIT:
+            if kind != "Kredit":
+                msg = f"Typ is {kind!r}, expected 'Kredit'"
+                raise RowError(msg)
+            self.deposits.append(self._deposit(_date(day, "Datum"), amount_cell))
         elif not _is_skipped(description):
             msg = "unknown transaction type"
             raise RowError(msg)
+
+    def _deposit(self, day: date, amount_cell: str) -> Deposit:
+        match = _AMOUNT_AND_CURRENCY.fullmatch(amount_cell)
+        if not match:
+            msg = f"Částka {amount_cell!r} is not an amount like '5 000,00 CZK'"
+            raise RowError(msg)
+        amount = _decimal(match["amount"], "Částka")
+        if match["currency"] != CZK:
+            msg = f"a Deposit in {match['currency']!r}; only {CZK} Deposits can be imported yet"
+            raise NotImplementedError(msg)
+        # The cash statement gives a Deposit no time or reference: identical ones on one day are told apart by count.
+        key = (day.isoformat(), str(amount))
+        self._deposit_counts[key] += 1
+        source_row_id = ";".join((*key, str(self._deposit_counts[key])))
+        return Deposit(self._portfolio, source_row_id, day, amount, CZK)
 
     def claim(self, order_day: date) -> _Payment:
         """The payment made on an issue's order day; raises unless there is exactly one."""
@@ -198,12 +234,8 @@ class _Payments:
 
 
 def _is_skipped(description: str) -> bool:
-    """Deposits, and the fee, rounding and fund lines: the payment they're part of gives the Purchase and its Fee."""
-    return (
-        description in {DEPOSIT, ROUNDING}
-        or description.startswith(FEE_PREFIX)
-        or description.endswith(FUND_LINE_SUFFIX)
-    )
+    """The fee, rounding and fund lines: the payment they're part of gives the Purchase and its Fee."""
+    return description == ROUNDING or description.startswith(FEE_PREFIX) or description.endswith(FUND_LINE_SUFFIX)
 
 
 def _holdings_rows(holdings: Statement) -> list[tuple[list[str], list[str]]]:
@@ -216,7 +248,7 @@ def _holdings_rows(holdings: Statement) -> list[tuple[list[str], list[str]]]:
     ]
 
 
-def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments: _Payments) -> tuple[Purchase, Decimal]:
+def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments: _Cash) -> tuple[Purchase, Decimal]:
     """The Purchase in a holdings row and the CZK of its Fee, claiming the payment it was bought with."""
     if cells[2] != ISSUE:
         msg = "unknown transaction type"
@@ -253,8 +285,7 @@ def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments:
         msg = f"Datum vypořádání {settled!r} {settled_time!r} is not a date and time like '31.12.2026' '23:59:59'"
         raise RowError(msg) from e
     purchase = Purchase(
-        # A Portfolio per contract, named by its number.
-        portfolio=Portfolio(Platform.INVESTIKA, key=portfolio, name=portfolio),
+        portfolio=_contract(portfolio),
         fund=Fund(isin, " ".join([name_start, *name_end])),
         source_row_id=settled_at.isoformat(),
         # The month-end price the units were issued at; see docs/adr/0001-investika-trade-date-is-the-price-date.md.
