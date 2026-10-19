@@ -232,8 +232,8 @@ def test_the_chart_values_cash_and_stacks_it_under_the_funds(tmp_path: Path) -> 
     # On 1 Jul 2021, at ČNB's 25.505 CZK per EUR and SXR7's 30 Jun close of 143.72 EUR.
     cash = 2400 + (100 - 69.67) * 25.505
     sxr7 = 0.5 * 143.72 * 25.505
-    assert page(tmp_path)["portfolio"]["value"] == pytest.approx(cash + sxr7)
-    stacked = page(tmp_path)["portfolio"]["composition"]
+    assert page(tmp_path)["wholePortfolio"]["value"] == pytest.approx(cash + sxr7)
+    stacked = page(tmp_path)["wholePortfolio"]["composition"]
     assert [(t["name"], t.get("stackgroup")) for t in stacked] == [
         ("Cash", "value"),
         ("SXR7 GY", "value"),

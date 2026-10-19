@@ -107,17 +107,17 @@ def test_a_holding_with_no_price_yet_has_no_value() -> None:
     )
 
     assert t.holding_values[jt(CZK_FUND)] == (None, Decimal(10))
-    assert t.portfolio_value == (None, Decimal(10))
+    assert t.whole_portfolio_value == (None, Decimal(10))
 
 
-def test_portfolio_value_is_the_sum_of_the_fund_values() -> None:
+def test_whole_portfolio_value_is_the_sum_of_the_fund_values() -> None:
     t = timeline(
         [purchase(date(2021, 6, 13), "1000", units="2"), purchase(date(2021, 6, 14), "1000", isin=OTHER_CZK_FUND)],
         prices=[price(date(2021, 6, 13), "10"), price(date(2021, 6, 13), "1.5", isin=OTHER_CZK_FUND)],
         today=date(2021, 6, 14),
     )
 
-    assert t.portfolio_value == (Decimal(20), Decimal("21.5"))
+    assert t.whole_portfolio_value == (Decimal(20), Decimal("21.5"))
 
 
 def rate(day: date, czk_per_unit: str, currency: str = "EUR") -> FxRate:
@@ -141,7 +141,7 @@ def test_eur_funds_are_valued_in_czk_at_the_rate_carried_forward_over_weekends()
     assert t.not_valued == {}
 
 
-def test_portfolio_value_counts_eur_funds_in_czk() -> None:
+def test_whole_portfolio_value_counts_eur_funds_in_czk() -> None:
     t = timeline(
         [purchase(date(2021, 6, 13), "1000"), purchase(date(2021, 6, 13), "1000", isin=EUR_FUND)],
         prices=[price(date(2021, 6, 13), "10"), price(date(2021, 6, 13), "40", isin=EUR_FUND, currency="EUR")],
@@ -149,7 +149,7 @@ def test_portfolio_value_counts_eur_funds_in_czk() -> None:
         today=date(2021, 6, 13),
     )
 
-    assert t.portfolio_value == (Decimal(1030),)
+    assert t.whole_portfolio_value == (Decimal(1030),)
 
 
 def test_a_holding_with_no_rate_yet_has_no_value() -> None:
@@ -172,7 +172,7 @@ def test_funds_priced_in_a_currency_without_rates_are_not_valued() -> None:
     )
 
     assert set(t.holding_values) == {jt(CZK_FUND)}
-    assert t.portfolio_value == (Decimal(10),)
+    assert t.whole_portfolio_value == (Decimal(10),)
     assert t.not_valued == {EUR_FUND: "no EUR rates stored"}
 
 
@@ -195,7 +195,7 @@ def test_funds_without_prices_are_not_valued() -> None:
     t = timeline([purchase(date(2021, 6, 13), "1000")], today=date(2021, 6, 13))
 
     assert t.holding_values == {}
-    assert t.portfolio_value is None
+    assert t.whole_portfolio_value is None
     assert t.not_valued == {CZK_FUND: "no prices stored"}
 
 
@@ -586,8 +586,9 @@ def test_an_account_has_no_value_only_when_nothing_in_it_can_be_valued() -> None
         today=date(2021, 6, 13),
     )
 
-    # Neither fund has prices and EUR has no rates, but Portu's CZK Cash can be valued, as in the portfolio's value.
-    assert t.accounts[PORTU].value == t.portfolio_value == (Decimal(500),)
+    # Neither fund has prices and EUR has no rates, but Portu's CZK Cash can be valued, as in the Whole Portfolio's
+    # value.
+    assert t.accounts[PORTU].value == t.whole_portfolio_value == (Decimal(500),)
     assert t.accounts[JT].value is None
 
 
@@ -614,11 +615,11 @@ def test_cash_is_valued_in_czk_at_the_last_known_rate_of_each_currency() -> None
         "EUR": (Decimal(500), Decimal(500), Decimal(500), Decimal(520)),
         "USD": (Decimal(200),) * 4,
     }
-    assert t.cash_value == t.portfolio_value == (Decimal(1000), Decimal(1000), Decimal(1000), Decimal(1020))
+    assert t.cash_value == t.whole_portfolio_value == (Decimal(1000), Decimal(1000), Decimal(1000), Decimal(1020))
     assert t.cash_not_valued == {}
 
 
-def test_portfolio_value_is_the_funds_plus_the_cash_so_fees_reduce_it() -> None:
+def test_whole_portfolio_value_is_the_funds_plus_the_cash_so_fees_reduce_it() -> None:
     t = timeline(
         [purchase(date(2021, 6, 13), "1000", units="2")],
         ledger=[entry(date(2021, 6, 13), DEPOSIT, "500"), entry(date(2021, 6, 14), FEE, "-25")],
@@ -626,7 +627,7 @@ def test_portfolio_value_is_the_funds_plus_the_cash_so_fees_reduce_it() -> None:
         today=date(2021, 6, 14),
     )
 
-    assert t.portfolio_value == (Decimal(520), Decimal(495))
+    assert t.whole_portfolio_value == (Decimal(520), Decimal(495))
 
 
 def test_negative_cash_is_valued_as_negative() -> None:
@@ -645,7 +646,7 @@ def test_negative_cash_is_valued_as_negative() -> None:
     )
 
     assert t.cash_values["USD"] == (Decimal(-1000), Decimal(0))
-    assert t.portfolio_value == (Decimal(0), Decimal(1000))
+    assert t.whole_portfolio_value == (Decimal(0), Decimal(1000))
 
 
 def test_cash_in_a_currency_without_rates_is_not_valued() -> None:
@@ -657,7 +658,7 @@ def test_cash_in_a_currency_without_rates_is_not_valued() -> None:
     )
 
     assert set(t.cash_values) == {"CZK"}
-    assert t.portfolio_value == (Decimal(1000),)
+    assert t.whole_portfolio_value == (Decimal(1000),)
     assert t.cash_not_valued == {"USD": "no USD rates stored"}
 
 
@@ -674,4 +675,4 @@ def test_cash_with_no_rate_yet_has_no_value_unless_there_is_none_of_it() -> None
     )
 
     assert t.cash_values["EUR"] == (Decimal(0), None, Decimal(0), Decimal(0))
-    assert t.portfolio_value == (Decimal(1000), None, Decimal(1000), Decimal(1000))
+    assert t.whole_portfolio_value == (Decimal(1000), None, Decimal(1000), Decimal(1000))

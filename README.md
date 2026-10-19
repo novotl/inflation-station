@@ -56,9 +56,9 @@ A fund in neither file, or in both, fails the command, naming it. After fetching
 
 The page has three layouts of the same data, switched in its top bar (or with ←/→, or `?view=dashboard|relative|funds`):
 
-- **Dashboard**: today's value, amount invested (fees included), gain and standing against each hurdle; a chart of the portfolio's value, amount invested and both hurdles; a section per Account with the same figures and chart; then a table of funds, a click on a row opening its chart.
-- **Relative to inflation**: how far the value is above or below the ČSÚ CPI hurdle (real) and the amount invested (nominal), in %, for the portfolio and then for each Account and each fund on one scale. ČSÚ's estimated months are shaded.
-- **Fund strip**: a tile per Account and per fund above one big chart: for the whole portfolio, Portu's Cash and each fund's value stacked, so the top edge is the portfolio value; for an Account or a fund, its own.
+- **Dashboard**: today's value, amount invested (fees included), gain and standing against each hurdle; a chart of the Whole Portfolio's value, amount invested and both hurdles; a section per Account with the same figures and chart; then a table of funds, a click on a row opening its chart.
+- **Relative to inflation**: how far the value is above or below the ČSÚ CPI hurdle (real) and the amount invested (nominal), in %, for the Whole Portfolio and then for each Account and each fund on one scale. ČSÚ's estimated months are shaded.
+- **Fund strip**: a tile per Account and per fund above one big chart: for the Whole Portfolio, Portu's Cash and each fund's value stacked, so the top edge is the Whole Portfolio value; for an Account or a fund, its own.
 
 Each Account, on every Platform, has a section headed `<Platform> · <Account>` (e.g. `J&T Banka · 900000001`, `Portu · Moje portfolio`): its value, its amount invested (the gross CZK of its Purchases, or its Deposits for Portu) and both inflation hurdles, grown from those alone. Portu's value is its Holdings plus its Cash, as in the total: each left out when it can't be valued. An Account with nothing in it valued has no value, saying whether its funds or its Cash are missing, and one partly valued names what its value leaves out.
 
