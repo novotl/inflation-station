@@ -1,25 +1,19 @@
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import click
 
 from inflation_station import clock, cnb, csu, eurostat
 from inflation_station.chart import write_chart
+from inflation_station.domain import Rows
 from inflation_station.errors import InflationStationError
 from inflation_station.freshness import out_of_date
 from inflation_station.imports import read_files
-from inflation_station.ledger import first_cash_days
 from inflation_station.price_check import price_warnings
 from inflation_station.price_index import CSU_CPI, EUROSTAT_HICP, NAMES
 from inflation_station.price_sources import price_sources
-from inflation_station.purchase import first_trade_dates
 from inflation_station.settings import Settings
 from inflation_station.store import Store, database_exists
-from inflation_station.valuation import CZK, NO_PRICES, Timeline, all_fund_names, no_rates, timeline
-
-if TYPE_CHECKING:
-    from inflation_station.ledger import LedgerEntry
-    from inflation_station.purchase import Purchase
+from inflation_station.valuation import CZK, NO_PRICES, Timeline, no_rates, timeline
 
 
 @click.group()
@@ -43,18 +37,20 @@ def import_(data_dir: Path, files: tuple[Path, ...]) -> None:
     """
     try:
         imported = read_files(files)
-        store = Store(data_dir)
-        purchases = store.add_purchases(imported.purchases)
-        fees = store.add_fees(imported.fees)
-        ledger = store.add_ledger_entries(imported.ledger)
+        added = Store(data_dir).add_rows(imported)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
-    if imported.purchases or not imported.ledger:
-        click.echo(f"{purchases.added} Purchases added, {purchases.already_present} already present.")
-    if imported.fees:
-        click.echo(f"{fees.added} Fees added, {fees.already_present} already present.")
-    if imported.ledger:
-        click.echo(f"{ledger.added} ledger entries added, {ledger.already_present} already present.")
+    counts = {
+        "Deposits": imported.deposits,
+        "Purchases": imported.purchases,
+        "Sales": imported.sales,
+        "Fees": imported.fees,
+        "Conversions": imported.conversions,
+    }
+    # Each kind of row the files hold; Purchases even when they hold none, so the import always says something.
+    for kind, rows in counts.items():
+        if rows or (kind == "Purchases" and not imported):
+            click.echo(f"{added[kind].added} {kind} added, {added[kind].already_present} already present.")
 
 
 @main.command("fetch-prices")
@@ -62,17 +58,17 @@ def import_(data_dir: Path, files: tuple[Path, ...]) -> None:
 def fetch_prices(data_dir: Path) -> None:
     """Download the daily prices of every purchased or held fund, from Conseq or Yahoo Finance."""
     try:
-        purchases, ledger = _stored_buys_and_sells(data_dir)
-        funds = all_fund_names(purchases, ledger)
-        sources = price_sources(funds)
+        rows = _read_rows(data_dir)
+        names = _fund_names(rows)
+        sources = price_sources(names)
         store = Store(data_dir)
         for isin, source in sources.items():
             # Stored fund by fund, so a later failure keeps what was fetched before it.
             result = store.add_fund_prices(source.fetch())
             click.echo(
-                f"{funds[isin]} ({isin}): {result.added} prices added, {result.already_present} already present."
+                f"{names[isin]} ({isin}): {result.added} prices added, {result.already_present} already present."
             )
-        warnings = price_warnings(purchases, ledger, store.fund_prices(), fund_names=funds, sources=sources)
+        warnings = price_warnings(rows, store.fund_prices(), fund_names=names, sources=sources)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
     for warning in warnings:
@@ -84,17 +80,14 @@ def fetch_prices(data_dir: Path) -> None:
 def fetch_fx(data_dir: Path) -> None:
     """Download daily CZK rates from ČNB for every currency a purchased fund is priced in or Cash is held in."""
     try:
-        purchases, ledger = _stored_purchases_and_ledger(data_dir, "to fetch rates for")
-        first_held = first_trade_dates(purchases)
-        for currency, day in first_cash_days(ledger).items():
-            first_held[currency] = min(day, first_held.get(currency, day))
+        first_held = _stored_rows(data_dir, "to fetch rates for").first_days()
         first_held.pop(CZK, None)
         if not first_held:
             click.echo(f"Every Purchase and all Cash is in {CZK}; no rates to fetch.")
             return
         store = Store(data_dir)
         for currency, first in sorted(first_held.items()):
-            stored = [r.day for r in store.fx_rates() if r.currency == currency]
+            stored = [r.day for r in store.fx_rates() if (r.from_currency, r.to_currency) == (currency, CZK)]
             added = already_present = 0
             for month in cnb.months_to_fetch(first, clock.today(), stored):
                 # Stored month by month, so a later failure keeps what was fetched before it.
@@ -110,7 +103,10 @@ def fetch_fx(data_dir: Path) -> None:
 @click.pass_obj
 def fetch_cpi(data_dir: Path) -> None:
     """Download ČSÚ's national CPI and Eurostat's HICP for Czechia, for the inflation hurdles."""
-    store = Store(data_dir)
+    try:
+        store = Store(data_dir)
+    except InflationStationError as e:
+        raise click.ClickException(str(e)) from e
     fetchers = {
         CSU_CPI: lambda: csu.continuing(csu.cpi(), store.index_levels()),
         EUROSTAT_HICP: eurostat.hicp,
@@ -134,22 +130,13 @@ def fetch_cpi(data_dir: Path) -> None:
 def chart(data_dir: Path) -> None:
     """Write an interactive HTML chart of the Whole Portfolio to the data directory."""
     try:
-        purchases, ledger = _stored_purchases_and_ledger(data_dir, "to chart")
+        rows = _stored_rows(data_dir, "to chart")
         store = Store(data_dir)
         prices = store.fund_prices()
         rates = store.fx_rates()
         index_levels = store.index_levels()
-        fees = store.fees()
         today = clock.today()
-        t = timeline(
-            purchases,
-            ledger=ledger,
-            fees=fees,
-            prices=prices,
-            rates=rates,
-            index_levels=index_levels,
-            today=today,
-        )
+        t = timeline(rows, prices=prices, rates=rates, index_levels=index_levels, today=today)
         # Only warnings, on stderr and on the page: the chart is still right up to each series' last point.
         warnings = out_of_date(
             prices=prices, rates=rates, index_levels=index_levels, fund_names=t.fund_names, today=today
@@ -163,34 +150,27 @@ def chart(data_dir: Path) -> None:
     click.echo(f"Chart written to {path}")
 
 
-def _stored_buys_and_sells(data_dir: Path) -> tuple[list[Purchase], list[LedgerEntry]]:
-    """The stored Purchases and ledger entries; raises if no fund was bought in either."""
-    purchases, ledger = _read_purchases_and_ledger(data_dir)
-    if not purchases and not any(e.isin for e in ledger):
-        msg = (
-            "no Purchases or Managed Portfolio buys to fetch prices for yet; import first: "
-            "inflation-station import <file>..."
-        )
-        raise InflationStationError(msg)
-    return purchases, ledger
-
-
-def _stored_purchases_and_ledger(data_dir: Path, purpose: str) -> tuple[list[Purchase], list[LedgerEntry]]:
-    """The stored Purchases and ledger entries; raises if there are neither."""
-    purchases, ledger = _read_purchases_and_ledger(data_dir)
-    if not purchases and not ledger:
+def _stored_rows(data_dir: Path, purpose: str) -> Rows:
+    """The stored rows; raises if there are none."""
+    rows = _read_rows(data_dir)
+    if not rows:
         msg = f"no Purchases or Deposits {purpose} yet; import first: inflation-station import <file>..."
         raise InflationStationError(msg)
-    return purchases, ledger
+    return rows
 
 
-def _read_purchases_and_ledger(data_dir: Path) -> tuple[list[Purchase], list[LedgerEntry]]:
-    """The stored Purchases and ledger entries, possibly none. Only reads: no database is created in an empty data
-    directory."""
-    if not database_exists(data_dir):
-        return [], []
-    store = Store(data_dir)
-    return store.purchases(), store.ledger()
+def _fund_names(rows: Rows) -> dict[str, str]:
+    """The name of every Fund bought or sold, by ISIN; raises if there are none."""
+    names = {isin: fund.name for isin, fund in rows.funds().items()}
+    if not names:
+        msg = "no Purchases or Sales to fetch prices for yet; import first: inflation-station import <file>..."
+        raise InflationStationError(msg)
+    return names
+
+
+def _read_rows(data_dir: Path) -> Rows:
+    """The stored rows, possibly none. Only reads: no database is created in an empty data directory."""
+    return Store(data_dir).rows() if database_exists(data_dir) else Rows()
 
 
 def _report_not_valued(t: Timeline, currencies: set[str]) -> None:

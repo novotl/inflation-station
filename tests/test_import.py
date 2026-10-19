@@ -8,17 +8,25 @@ from alembic.migration import MigrationContext
 from click.testing import CliRunner
 from fpdf import FPDF
 from pypdf import PdfWriter
-from sqlalchemy import text
 
 from inflation_station.cli import main
+from inflation_station.domain import Conversion, Fund, Platform, Portfolio
 from inflation_station.settings import Settings
-from inflation_station.store import Base, Store, database_url, engine, migrate
+from inflation_station.store import Base, Store, database_url, engine
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPORT = FIXTURES / "jt_export.csv"
 INVESTIKA_CASH = FIXTURES / "investika" / "cash.pdf"
 INVESTIKA_HOLDINGS = FIXTURES / "investika" / "holdings.pdf"
 REPO_DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+# What importing the J&T fixture reports the first time, and again: a Conversion paid for each Purchase priced in EUR.
+JT_PORTFOLIO = Portfolio(Platform.JT, "900000001", "900000001")
+JT_ADDED = (
+    "7 Purchases added, 0 already present.\n7 Fees added, 0 already present.\n3 Conversions added, 0 already present.\n"
+)
+JT_PRESENT = (
+    "0 Purchases added, 7 already present.\n0 Fees added, 7 already present.\n0 Conversions added, 3 already present.\n"
+)
 
 
 def run(*args: str | Path) -> tuple[int, str, str]:
@@ -30,7 +38,7 @@ def run(*args: str | Path) -> tuple[int, str, str]:
 def test_import_reports_purchases_added(tmp_path: Path) -> None:
     assert run("--data-dir", tmp_path, "import", EXPORT) == (
         0,
-        "7 Purchases added, 0 already present.\n7 Fees added, 0 already present.\n",
+        JT_ADDED,
         "",
     )
 
@@ -38,32 +46,57 @@ def test_import_reports_purchases_added(tmp_path: Path) -> None:
 def test_jt_row_with_a_fee_imports_as_the_purchase_of_its_units_plus_a_fee(tmp_path: Path) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
 
-    store = Store(tmp_path)
-    purchase = next(p for p in store.purchases() if p.source_row_id == "900100003")
-    fee = next(f for f in store.fees() if f.source_row_id == "900100003")
+    rows = Store(tmp_path).rows()
+    purchase = next(p for p in rows.purchases if p.source_row_id == "900100003")
+    fee = next(f for f in rows.fees if f.source_row_id == "900100003")
     # The row paid 8 000 CZK with a 231.24 CZK fee.
-    assert purchase.czk == Decimal("7768.76")
-    assert (fee.platform, fee.portfolio_id, fee.day, fee.isin, fee.czk) == (
-        "jt",
-        "900000001",
+    assert (purchase.portfolio, purchase.fund, purchase.currency, purchase.amount) == (
+        JT_PORTFOLIO,
+        Fund("LU1756523376", "FF - World Fund A-ACC-CZK"),
+        "CZK",
+        Decimal("7768.76"),
+    )
+    assert (fee.portfolio, fee.day, fee.amount, fee.currency) == (
+        JT_PORTFOLIO,
         date(2021, 6, 15),
-        "LU1756523376",
         Decimal("231.24"),
+        "CZK",
     )
 
 
-def test_each_jt_purchase_and_its_fee_add_up_to_the_payment_on_its_day_and_holding(tmp_path: Path) -> None:
+def test_jt_row_priced_in_eur_imports_as_a_fee_a_conversion_and_a_purchase_in_eur(tmp_path: Path) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
 
-    store = Store(tmp_path)
-    fees = {f.source_row_id: f for f in store.fees()}
-    invested = {
-        p.source_row_id: p.czk + fees[p.source_row_id].czk
-        for p in store.purchases()
-        if (fees[p.source_row_id].day, fees[p.source_row_id].isin) == (p.trade_date, p.isin)
-    }
-    # The export's Objem v měně platby, so amount invested and inflation hurdles count what they did before the split.
-    assert invested == {
+    rows = Store(tmp_path).rows()
+    # The row paid 5 000 CZK with a 145.63 CZK fee, and bought 12.07 units at 15.52 EUR for 187.34 EUR.
+    assert next(c for c in rows.conversions if c.source_row_id == "900100004:conversion") == Conversion(
+        JT_PORTFOLIO, "900100004:conversion", date(2021, 6, 15), Decimal("4854.37"), "CZK", Decimal("187.34"), "EUR"
+    )
+    purchase = next(p for p in rows.purchases if p.source_row_id == "900100004")
+    assert (purchase.units, purchase.unit_price, purchase.currency, purchase.amount) == (
+        Decimal("12.07"),
+        Decimal("15.52"),
+        "EUR",
+        Decimal("187.34"),
+    )
+    assert next(f.amount for f in rows.fees if f.source_row_id == "900100004") == Decimal("145.63")
+
+
+def test_each_jt_purchase_its_fee_and_its_conversion_add_up_to_the_payment(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", EXPORT)
+
+    rows = Store(tmp_path).rows()
+    paid: dict[str, Decimal] = {}
+    for p in rows.purchases:
+        if p.currency == "CZK":
+            paid[p.source_row_id] = paid.get(p.source_row_id, Decimal(0)) + p.amount
+    for c in rows.conversions:
+        source_row_id = c.source_row_id.removesuffix(":conversion")
+        paid[source_row_id] = paid.get(source_row_id, Decimal(0)) + c.from_amount
+    for f in rows.fees:
+        paid[f.source_row_id] += f.amount
+    # The export's Objem v měně platby, so amount invested and inflation hurdles count what they did before.
+    assert paid == {
         "900100003": Decimal(8000),
         "900100004": Decimal(5000),
         "900100006": Decimal(5000),
@@ -74,47 +107,19 @@ def test_each_jt_purchase_and_its_fee_add_up_to_the_payment_on_its_day_and_holdi
     }
 
 
-def test_jt_row_with_a_zero_fee_imports_as_a_purchase_only(tmp_path: Path) -> None:
+def test_jt_row_with_a_zero_fee_imports_without_a_fee(tmp_path: Path) -> None:
     export = tmp_path / "jt_export.csv"
     # A zero fee has no currency to check.
     export.write_text(EXPORT.read_text(encoding="utf-8").replace('"231,24";CZK', '",00";', 1), encoding="utf-8")
 
     assert run("--data-dir", tmp_path, "import", export) == (
         0,
-        "7 Purchases added, 0 already present.\n6 Fees added, 0 already present.\n",
+        JT_ADDED.replace("7 Fees", "6 Fees"),
         "",
     )
-    store = Store(tmp_path)
-    assert next(p for p in store.purchases() if p.source_row_id == "900100003").czk == Decimal("8000.00")
-    assert "900100003" not in {f.source_row_id for f in store.fees()}
-
-
-def test_reimporting_after_the_upgrade_stores_purchases_and_fees_once(tmp_path: Path) -> None:
-    url = database_url(tmp_path)
-    migrate(url, "0007")
-    with engine(url).begin() as connection:
-        # The row as stored before Fees were split out: its gross CZK holds its fee.
-        connection.execute(
-            text(
-                "INSERT INTO purchase (platform, portfolio_id, source_row_id, isin, fund_name, trade_date, units,"
-                " unit_price, unit_price_currency, gross_czk, fee, fee_currency, imported_at)"
-                " VALUES ('jt', '900000001', '900100003', 'LU1756523376', 'FF - World Fund A-ACC-CZK', '2021-06-15',"
-                " '5.41', '1436.00', 'CZK', '8000.00', '231.24', 'CZK', '2026-10-10 10:00:00.000000')"
-            )
-        )
-
-    assert run("--data-dir", tmp_path, "import", EXPORT) == (
-        0,
-        "7 Purchases added, 0 already present.\n7 Fees added, 0 already present.\n",
-        "",
-    )
-    assert run("--data-dir", tmp_path, "import", EXPORT) == (
-        0,
-        "0 Purchases added, 7 already present.\n0 Fees added, 7 already present.\n",
-        "",
-    )
-    store = Store(tmp_path)
-    assert next(p for p in store.purchases() if p.source_row_id == "900100003").czk == Decimal("7768.76")
+    rows = Store(tmp_path).rows()
+    assert next(p for p in rows.purchases if p.source_row_id == "900100003").amount == Decimal("8000.00")
+    assert "900100003" not in {f.source_row_id for f in rows.fees}
 
 
 def test_cash_deposit_rows_do_not_produce_purchases(tmp_path: Path) -> None:
@@ -162,7 +167,7 @@ def test_reimporting_the_same_export_adds_nothing(tmp_path: Path) -> None:
 
     assert run("--data-dir", tmp_path, "import", EXPORT) == (
         0,
-        "0 Purchases added, 7 already present.\n0 Fees added, 7 already present.\n",
+        JT_PRESENT,
         "",
     )
 
@@ -172,7 +177,10 @@ def test_importing_an_overlapping_export_adds_only_new_purchases(tmp_path: Path)
 
     assert run("--data-dir", tmp_path, "import", FIXTURES / "jt_export_overlap.csv") == (
         0,
-        "2 Purchases added, 3 already present.\n2 Fees added, 3 already present.\n",
+        (
+            "2 Purchases added, 3 already present.\n2 Fees added, 3 already present.\n"
+            "1 Conversions added, 2 already present.\n"
+        ),
         "",
     )
 
@@ -189,12 +197,28 @@ def test_unknown_movement_type_fails_naming_the_row_and_imports_nothing(tmp_path
 
     # The file's valid Purchase row was not stored either.
     _, out, _ = run("--data-dir", tmp_path, "import", EXPORT)
-    assert out == "7 Purchases added, 0 already present.\n7 Fees added, 0 already present.\n"
+    assert out == JT_ADDED
 
 
 @pytest.mark.parametrize(
     ("original", "broken", "error"),
     [
+        (
+            '"1 436,00";CZK',
+            '"1 436,00";Kč',
+            (
+                "jt_export.csv row 4 (ID pohybu 900100003): "
+                "Měna kusové hodnoty (v měně obchodu) 'Kč' is not an ISO 4217 currency code\n"
+            ),
+        ),
+        (
+            '"187,34";EUR',
+            '"187,34";CZK',
+            (
+                "jt_export.csv row 5 (ID pohybu 900100004): Měna objemu obchodu (v měně obchodu) is 'CZK', "
+                "expected 'EUR' like Měna kusové hodnoty (v měně obchodu)\n"
+            ),
+        ),
         (
             '"5,41"',
             '"5,4x1"',
@@ -239,7 +263,7 @@ def test_data_dir_can_be_set_by_env_var(tmp_path: Path, monkeypatch: pytest.Monk
     run("import", EXPORT)
 
     _, out, _ = run("--data-dir", tmp_path / "from-env", "import", EXPORT)
-    assert out == "0 Purchases added, 7 already present.\n0 Fees added, 7 already present.\n"
+    assert out == JT_PRESENT
 
 
 def test_data_dir_option_overrides_env_var(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -247,7 +271,7 @@ def test_data_dir_option_overrides_env_var(tmp_path: Path, monkeypatch: pytest.M
     run("--data-dir", tmp_path / "from-option", "import", EXPORT)
 
     _, out, _ = run("import", EXPORT)
-    assert out == "7 Purchases added, 0 already present.\n7 Fees added, 0 already present.\n"
+    assert out == JT_ADDED
 
 
 def test_data_dir_defaults_to_the_repos_data_dir(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -277,22 +301,28 @@ def test_investika_pair_imports_one_purchase_per_issue(tmp_path: Path) -> None:
         "",
     )
 
-    stored = {p.source_row_id: p for p in Store(tmp_path).purchases()}
+    rows = Store(tmp_path).rows()
+    stored = {p.source_row_id: p for p in rows.purchases}
     assert sorted(stored) == ["2021-05-10T16:21:05", "2026-09-10T11:02:49"]
     issue = stored["2026-09-10T11:02:49"]
-    assert (issue.platform, issue.portfolio_id, issue.fund_name) == (
-        "investika",
-        "1234567890",
-        "INVESTIKA realitní fond, otevřený podílový fond - Třída CZK",
+    assert (issue.portfolio, issue.fund) == (
+        Portfolio(Platform.INVESTIKA, "1234567890", "1234567890"),
+        Fund("CZ0008474830", "INVESTIKA realitní fond, otevřený podílový fond - Třída CZK"),
     )
-    assert (issue.trade_date, issue.units, issue.unit_price, issue.czk) == (
+    assert (issue.day, issue.units, issue.unit_price, issue.currency, issue.amount) == (
         date(2026, 8, 31),
         Decimal(2783),
         Decimal("1.7603"),
+        "CZK",
         Decimal("4898.91"),
     )
-    fee = next(f for f in Store(tmp_path).fees() if f.source_row_id == "2026-09-10T11:02:49")
-    assert (fee.day, fee.isin, fee.czk) == (date(2026, 8, 31), "CZ0008474830", Decimal("101.09"))
+    fee = next(f for f in rows.fees if f.source_row_id == "2026-09-10T11:02:49")
+    assert (fee.portfolio, fee.day, fee.amount, fee.currency) == (
+        issue.portfolio,
+        date(2026, 8, 31),
+        Decimal("101.09"),
+        "CZK",
+    )
 
 
 def test_reimporting_investika_statements_adds_nothing(tmp_path: Path) -> None:
@@ -308,7 +338,10 @@ def test_reimporting_investika_statements_adds_nothing(tmp_path: Path) -> None:
 def test_jt_export_and_investika_pair_import_together(tmp_path: Path) -> None:
     assert run("--data-dir", tmp_path, "import", EXPORT, INVESTIKA_CASH, INVESTIKA_HOLDINGS) == (
         0,
-        "9 Purchases added, 0 already present.\n9 Fees added, 0 already present.\n",
+        (
+            "9 Purchases added, 0 already present.\n9 Fees added, 0 already present.\n"
+            "3 Conversions added, 0 already present.\n"
+        ),
         "",
     )
 
@@ -325,7 +358,7 @@ def test_one_investika_statement_alone_fails_and_imports_nothing(tmp_path: Path)
 
     # The J&T export given with it was not stored either.
     _, out, _ = run("--data-dir", tmp_path, "import", EXPORT)
-    assert out == "7 Purchases added, 0 already present.\n7 Fees added, 0 already present.\n"
+    assert out == JT_ADDED
 
 
 def test_bad_file_among_several_fails_and_imports_nothing(tmp_path: Path) -> None:

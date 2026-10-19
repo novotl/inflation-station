@@ -6,12 +6,14 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from inflation_station import web
+from inflation_station.currency import code as currency_code
 from inflation_station.errors import InflationStationError
 from inflation_station.fx_rate import FxRate
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+CZK = "CZK"
 MONTH_URL = "https://api.cnb.cz/cnbapi/exrates/daily-currency-month?currency={currency}&yearMonth={month}&lang=EN"
 
 
@@ -34,12 +36,22 @@ def months_to_fetch(first_held: date, today: date, stored: Iterable[date]) -> li
 
 def rates(currency: str, month: date) -> list[FxRate]:
     """Every daily rate of `currency` ČNB published in the month starting `month`."""
+    try:
+        currency_code(currency)
+    except ValueError as e:
+        raise InflationStationError(str(e)) from e
     url = MONTH_URL.format(currency=currency, month=f"{month:%Y-%m}")
     try:
         response = json.loads(web.fetch(url), parse_float=Decimal, parse_int=Decimal)
         return [
-            # ČNB quotes some currencies per 100 units (or more); `amount` says how many.
-            FxRate(currency=currency, day=date.fromisoformat(r["validFor"]), czk_per_unit=r["rate"] / r["amount"])
+            # Some currencies are quoted per 100 units (or more); `amount` says how many.
+            FxRate(
+                day=date.fromisoformat(r["validFor"]),
+                from_currency=currency,
+                from_amount=r["amount"],
+                to_currency=CZK,
+                to_amount=r["rate"],
+            )
             for r in response["rates"]
             if r["currencyCode"] == currency
         ]

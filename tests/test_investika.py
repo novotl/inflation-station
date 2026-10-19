@@ -6,64 +6,47 @@ from pathlib import Path
 import pytest
 
 from inflation_station import investika
+from inflation_station.domain import Fee, Fund, Platform, Portfolio, Purchase, Rows
 from inflation_station.errors import InflationStationError
-from inflation_station.fee import Fee
-from inflation_station.purchase import Purchase
 
 INVESTIKA = Path(__file__).parent / "fixtures" / "investika"
-FUND_NAME = "INVESTIKA realitní fond, otevřený podílový fond - Třída CZK"
+CONTRACT = Portfolio(Platform.INVESTIKA, "1234567890", "1234567890")
+FUND = Fund("CZ0008474830", "INVESTIKA realitní fond, otevřený podílový fond - Třída CZK")
 ISSUES = [
     Purchase(
-        platform="investika",
-        portfolio_id="1234567890",
+        portfolio=CONTRACT,
+        fund=FUND,
         source_row_id="2026-09-10T11:02:49",
-        isin="CZ0008474830",
-        fund_name=FUND_NAME,
-        trade_date=date(2026, 8, 31),
+        day=date(2026, 8, 31),
         units=Decimal(2783),
         unit_price=Decimal("1.7603"),
-        unit_price_currency="CZK",
-        czk=Decimal("4898.91"),
+        currency="CZK",
+        amount=Decimal("4898.91"),
     ),
     Purchase(
-        platform="investika",
-        portfolio_id="1234567890",
+        portfolio=CONTRACT,
+        fund=FUND,
         source_row_id="2021-05-10T16:21:05",
-        isin="CZ0008474830",
-        fund_name=FUND_NAME,
-        trade_date=date(2021, 4, 30),
+        day=date(2021, 4, 30),
         units=Decimal(7761),
         unit_price=Decimal("1.2883"),
-        unit_price_currency="CZK",
-        czk=Decimal("9998.50"),
+        currency="CZK",
+        amount=Decimal("9998.50"),
     ),
 ]
 # The payment less the issue's Částka: the entry fee and the rounding.
 FEES = [
-    Fee(
-        platform="investika",
-        portfolio_id="1234567890",
-        source_row_id="2026-09-10T11:02:49",
-        day=date(2026, 8, 31),
-        isin="CZ0008474830",
-        czk=Decimal("101.09"),
-    ),
-    Fee(
-        platform="investika",
-        portfolio_id="1234567890",
-        source_row_id="2021-05-10T16:21:05",
-        day=date(2021, 4, 30),
-        isin="CZ0008474830",
-        czk=Decimal("201.50"),
-    ),
+    Fee(CONTRACT, "2026-09-10T11:02:49", date(2026, 8, 31), Decimal("101.09"), "CZK"),
+    Fee(CONTRACT, "2021-05-10T16:21:05", date(2021, 4, 30), Decimal("201.50"), "CZK"),
 ]
+ROWS = Rows(purchases=ISSUES, fees=FEES)
 
 
 def statement(fixture: str) -> investika.Statement:
     return investika.statement(fixture, (INVESTIKA / fixture).read_text(encoding="utf-8").splitlines())
 
 
-def purchases_and_fees(*fixtures: str | investika.Statement) -> tuple[list[Purchase], list[Fee]]:
+def purchases_and_fees(*fixtures: str | investika.Statement) -> Rows:
     """Purchases and Fees from fixture files, or from statements a test has changed."""
     return investika.purchases_and_fees([statement(f) if isinstance(f, str) else f for f in fixtures])
 
@@ -74,15 +57,15 @@ def fails(*fixtures: str | investika.Statement, error: str) -> None:
 
 
 def test_one_purchase_per_issue_and_a_fee_of_the_rest_of_its_payment() -> None:
-    assert purchases_and_fees("cash.txt", "holdings.txt") == (ISSUES, FEES)
+    assert purchases_and_fees("cash.txt", "holdings.txt") == ROWS
 
 
 def test_the_pair_may_be_given_in_either_order() -> None:
-    assert purchases_and_fees("holdings.txt", "cash.txt") == (ISSUES, FEES)
+    assert purchases_and_fees("holdings.txt", "cash.txt") == ROWS
 
 
 def test_pending_payment_is_skipped() -> None:
-    assert purchases_and_fees("cash_pending_payment.txt", "holdings.txt") == (ISSUES, FEES)
+    assert purchases_and_fees("cash_pending_payment.txt", "holdings.txt") == ROWS
 
 
 def test_issue_with_no_matching_payment_fails() -> None:
@@ -159,7 +142,7 @@ def test_two_statements_of_one_kind_for_a_portfolio_fail() -> None:
 
 
 def test_no_statements_give_no_purchases() -> None:
-    assert investika.purchases_and_fees([]) == ([], [])
+    assert investika.purchases_and_fees([]) == Rows()
 
 
 def test_payment_smaller_than_the_issue_fails() -> None:
@@ -238,6 +221,11 @@ def test_two_issues_settled_at_the_same_time_fail() -> None:
             "CZK            CZK ",
             "EUR            EUR ",
             "holdings.txt row 'Vydání CP' ordered 03.08.2026: Částka is in 'EUR', expected 'CZK'",
+        ),
+        (
+            "CZK            CZK ",
+            "EUR            CZK ",
+            "holdings.txt row 'Vydání CP' ordered 03.08.2026: Cena / kus is in 'EUR', expected 'CZK' like Částka",
         ),
     ],
 )

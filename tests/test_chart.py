@@ -1,7 +1,6 @@
 import json
 import re
 import socket
-from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -12,9 +11,8 @@ from click.testing import CliRunner
 from inflation_station import clock
 from inflation_station.chart import write_chart
 from inflation_station.cli import main
+from inflation_station.domain import Deposit, Fund, Platform, Portfolio, Purchase, Rows
 from inflation_station.fund_price import FundPrice
-from inflation_station.ledger import BUY, DEPOSIT, LedgerEntry
-from inflation_station.purchase import Purchase
 from inflation_station.valuation import timeline
 
 EXPORT = Path(__file__).parent / "fixtures" / "jt_export.csv"
@@ -536,23 +534,20 @@ def test_holdings_in_a_managed_portfolio_show_units_but_no_amount_invested_or_hu
     assert all(f["chart"] == f["relative"] == [] for f in portu)
 
 
+MOJE_PORTFOLIO = Portfolio(Platform.PORTU, "Moje portfolio", "Moje portfolio")
+
+
+def portu_buy(fund: Fund, units: int, currency: str = "CZK") -> Purchase:
+    """A Portu Purchase of `units` units at 100 on 13 Jun 2021."""
+    return Purchase(
+        MOJE_PORTFOLIO, fund, "2", date(2021, 6, 13), Decimal(units), Decimal(100), currency, Decimal(units * 100)
+    )
+
+
 def test_a_valued_holding_in_a_managed_portfolio_charts_its_value_only(tmp_path: Path) -> None:
-    deposit = LedgerEntry(
-        "portu", "Moje portfolio", "1", date(2021, 6, 13), DEPOSIT, "", "", Decimal(0), None, Decimal(500), "CZK"
-    )
-    buy = replace(
-        deposit,
-        source_row_id="2",
-        kind=BUY,
-        isin="IE00B53QG562",
-        fund_name="SXR7 GY",
-        units=Decimal(2),
-        unit_price=Decimal(100),
-        amount=Decimal(-200),
-    )
+    deposit = Deposit(MOJE_PORTFOLIO, "1", date(2021, 6, 13), Decimal(500), "CZK")
     t = timeline(
-        [],
-        ledger=[deposit, buy],
+        Rows(deposits=[deposit], purchases=[portu_buy(Fund("IE00B53QG562", "SXR7 GY"), units=2)]),
         prices=[FundPrice(isin="IE00B53QG562", day=date(2021, 6, 13), price=Decimal(110), currency="CZK")],
         today=date(2021, 6, 14),
     )
@@ -566,26 +561,23 @@ def test_a_valued_holding_in_a_managed_portfolio_charts_its_value_only(tmp_path:
     assert page(tmp_path)["portfolios"][0]["leftOut"] == []
 
 
-def ff_world(units: int) -> Purchase:
+def ff_world(units: int, portfolio: str = "900000001") -> Purchase:
     """A J&T Purchase of `units` FF World units at 10 CZK, in Portfolio 900000001 on 13 Jun 2021."""
     return Purchase(
-        platform="jt",
-        portfolio_id="900000001",
+        portfolio=Portfolio(Platform.JT, portfolio, portfolio),
+        fund=Fund("LU1756523376", "FF - World Fund A-ACC-CZK"),
         source_row_id="1",
-        isin="LU1756523376",
-        fund_name="FF - World Fund A-ACC-CZK",
-        trade_date=date(2021, 6, 13),
+        day=date(2021, 6, 13),
         units=Decimal(units),
         unit_price=Decimal(10),
-        unit_price_currency="CZK",
-        czk=Decimal(units * 10),
+        currency="CZK",
+        amount=Decimal(units * 10),
     )
 
 
 def test_one_fund_in_two_portfolios_is_two_holdings_each_naming_its_portfolio(tmp_path: Path) -> None:
-    bought = ff_world(units=2)
     t = timeline(
-        [bought, replace(bought, portfolio_id="900000002", units=Decimal(3), czk=Decimal(30))],
+        Rows(purchases=[ff_world(units=2), ff_world(units=3, portfolio="900000002")]),
         prices=[FundPrice(isin="LU1756523376", day=date(2021, 6, 13), price=Decimal(10), currency="CZK")],
         today=date(2021, 6, 14),
     )
@@ -605,21 +597,15 @@ def test_one_fund_in_two_portfolios_is_two_holdings_each_naming_its_portfolio(tm
 
 
 def test_a_portfolio_with_nothing_valued_says_whether_its_funds_or_its_cash_are_missing(tmp_path: Path) -> None:
-    usd = LedgerEntry(
-        "portu", "Cash only", "1", date(2021, 6, 13), DEPOSIT, "", "", Decimal(0), None, Decimal(100), "USD"
+    cash_only = Portfolio(Platform.PORTU, "Cash only", "Cash only")
+    rows = Rows(
+        deposits=[
+            Deposit(cash_only, "1", date(2021, 6, 13), Decimal(100), "USD"),
+            Deposit(MOJE_PORTFOLIO, "1", date(2021, 6, 13), Decimal(100), "USD"),
+        ],
+        purchases=[ff_world(units=1), portu_buy(Fund("IE00B5BMR087", "CSPX LN"), units=1, currency="USD")],
     )
-    buy = replace(
-        usd,
-        portfolio_id="Moje portfolio",
-        kind=BUY,
-        isin="IE00B5BMR087",
-        fund_name="CSPX LN",
-        units=Decimal(1),
-        unit_price=Decimal(100),
-        amount=Decimal(-100),
-    )
-    bought = ff_world(units=1)
-    write_chart(timeline([bought], ledger=[usd, buy], today=date(2021, 6, 13)), tmp_path)
+    write_chart(timeline(rows, today=date(2021, 6, 13)), tmp_path)
 
     assert {a["name"]: a["notValued"] for a in page(tmp_path)["portfolios"]} == {
         "J&T Banka · 900000001": "none of its funds valued",

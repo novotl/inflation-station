@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import urljoin
 
 from inflation_station import web
+from inflation_station.currency import code as currency_code
 from inflation_station.errors import InflationStationError
 from inflation_station.fund_price import FundPrice
 
@@ -71,7 +72,9 @@ def _read_price_history(isin: str, xlsx: bytes) -> list[FundPrice]:
         if serial is None or price is None or not currency:
             raise ValueError(msg)
         try:
-            prices.append(FundPrice(isin=isin, day=_excel_date(serial), price=Decimal(price), currency=currency))
+            prices.append(
+                FundPrice(isin=isin, day=_excel_date(serial), price=Decimal(price), currency=currency_code(currency))
+            )
         except (InvalidOperation, ValueError) as e:
             raise ValueError(msg) from e
     return prices

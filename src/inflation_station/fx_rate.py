@@ -8,8 +8,17 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class FxRate:
-    """What one unit of `currency` cost in CZK on one day, as ČNB published it. (currency, day) identifies it."""
+    """`from_amount` of `from_currency` cost `to_amount` of `to_currency` on one day, as the publisher quoted it (ČNB
+    quotes some currencies per 100 units). (day, from_currency, to_currency) identifies it.
+    """
 
-    currency: str
     day: date
-    czk_per_unit: Decimal
+    from_currency: str
+    from_amount: Decimal
+    to_currency: str
+    to_amount: Decimal
+
+    @property
+    def rate(self) -> Decimal:
+        """What one unit of `from_currency` cost in `to_currency`."""
+        return self.to_amount / self.from_amount

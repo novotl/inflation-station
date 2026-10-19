@@ -59,10 +59,7 @@ def test_fetch_prices_with_an_empty_database_fails_with_a_readable_message(tmp_p
     assert run("--data-dir", tmp_path, "fetch-prices") == (
         1,
         "",
-        (
-            "Error: no Purchases or Managed Portfolio buys to fetch prices for yet; import first: "
-            "inflation-station import <file>...\n"
-        ),
+        ("Error: no Purchases or Sales to fetch prices for yet; import first: inflation-station import <file>...\n"),
     )
 
 
@@ -181,7 +178,10 @@ def with_ff_world_bought_at(price: str, tmp_path: Path, currency: str = "CZK") -
     """The fixture export, with the 15 Jun 2021 FF World Purchase (Conseq: 1 436 CZK) at `price` `currency` instead."""
     export = tmp_path / "changed.csv"
     original = EXPORT.read_text(encoding="utf-8")
-    export.write_text(original.replace('"1 436,00";CZK', f'"{price}";{currency}'), encoding="utf-8")
+    changed = original.replace('"1 436,00";CZK', f'"{price}";{currency}')
+    # Its trade volume is in the currency of its price.
+    changed = changed.replace('"7 768,77";CZK', f'"7 768,77";{currency}')
+    export.write_text(changed, encoding="utf-8")
     return export
 
 

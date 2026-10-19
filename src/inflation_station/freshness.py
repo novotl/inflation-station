@@ -51,7 +51,7 @@ def out_of_date(
             too_old = _business_days(last, today) > MAX_BUSINESS_DAYS
         if too_old:
             warnings.append(f"{name} ({isin}) prices end on {last}; run inflation-station fetch-prices")
-    for currency, last in sorted(_last((r.currency, r.day) for r in rates).items()):
+    for currency, last in sorted(_last((r.from_currency, r.day) for r in rates).items()):
         if _business_days(last, today) > MAX_BUSINESS_DAYS:
             warnings.append(f"{currency} rates end on {last}; run inflation-station fetch-fx")
     for series, last in sorted(_last((i.series, i.month) for i in index_levels).items()):

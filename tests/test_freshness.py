@@ -16,7 +16,7 @@ def price(day: date, isin: str = FUND) -> FundPrice:
 
 
 def rate(day: date) -> FxRate:
-    return FxRate(currency="EUR", day=day, czk_per_unit=Decimal(25))
+    return FxRate(day, "EUR", Decimal(1), "CZK", Decimal(25))
 
 
 def level(month: date, series: str = CSU_CPI) -> IndexLevel:

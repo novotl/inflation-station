@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from inflation_station import clock, web
+from inflation_station.currency import code as currency_code
 from inflation_station.errors import InflationStationError
 from inflation_station.fund_price import FundPrice
 
@@ -60,5 +61,5 @@ def _read_chart(isin: str, chart: dict, today: date) -> list[FundPrice]:
         if close is None or day >= today:
             continue
         price = Decimal(f"{close:.{_SIGNIFICANT_DIGITS}g}")
-        prices.append(FundPrice(isin=isin, day=day, price=price, currency=meta["currency"]))
+        prices.append(FundPrice(isin=isin, day=day, price=price, currency=currency_code(meta["currency"])))
     return prices
