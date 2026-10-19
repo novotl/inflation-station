@@ -76,7 +76,8 @@ def test_each_jt_purchase_and_its_fee_add_up_to_the_payment_on_its_day_and_holdi
 
 def test_jt_row_with_a_zero_fee_imports_as_a_purchase_only(tmp_path: Path) -> None:
     export = tmp_path / "jt_export.csv"
-    export.write_text(EXPORT.read_text(encoding="utf-8").replace('"231,24"', '",00"', 1), encoding="utf-8")
+    # A zero fee has no currency to check.
+    export.write_text(EXPORT.read_text(encoding="utf-8").replace('"231,24";CZK', '",00";', 1), encoding="utf-8")
 
     assert run("--data-dir", tmp_path, "import", export) == (
         0,

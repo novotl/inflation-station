@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING, NamedTuple
 from pypdf import PdfReader
 from pypdf.errors import PyPdfError
 
-from inflation_station import czech, fee
+from inflation_station import czech
 from inflation_station.errors import InflationStationError
+from inflation_station.fee import charged_on
 from inflation_station.purchase import Purchase
 
 if TYPE_CHECKING:
@@ -119,7 +120,7 @@ def purchases_and_fees(statements: Iterable[Statement]) -> tuple[list[Purchase],
             except RowError as e:
                 msg = f"{holdings.name} row {cells[2]!r} ordered {cells[-1]}: {e}"
                 raise InflationStationError(msg) from e
-            fees.extend(fee.charged_on(purchase, fee_czk))
+            fees.extend(charged_on(purchase, fee_czk))
     return purchases, fees
 
 

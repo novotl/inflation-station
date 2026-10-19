@@ -4,8 +4,9 @@ import csv
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from inflation_station import czech, fee
+from inflation_station import czech
 from inflation_station.errors import InflationStationError
+from inflation_station.fee import charged_on
 from inflation_station.purchase import Purchase
 
 if TYPE_CHECKING:
@@ -73,15 +74,17 @@ def read_export(path: Path) -> tuple[list[Purchase], list[Fee]]:
                     msg = f"{path.name} row {reader.line_num} ({ROW_ID} {row[ROW_ID]}): {e}"
                     raise InflationStationError(msg) from e
                 if bought:
-                    purchases.append(bought[0])
-                    fees.extend(bought[1])
+                    purchase, fee_czk = bought
+                    purchases.append(purchase)
+                    fees.extend(charged_on(purchase, fee_czk))
     except (OSError, UnicodeDecodeError, csv.Error) as e:
         msg = f"cannot read {path}: {e}"
         raise InflationStationError(msg) from e
     return purchases, fees
 
 
-def _purchase(row: dict[str, str]) -> tuple[Purchase, list[Fee]] | None:
+def _purchase(row: dict[str, str]) -> tuple[Purchase, Decimal] | None:
+    """The Purchase in a row and the CZK of its Fee, or None for a cash deposit."""
     movement_type = row[MOVEMENT_TYPE]
     if _is_cash_deposit(row):
         return None
@@ -91,12 +94,12 @@ def _purchase(row: dict[str, str]) -> tuple[Purchase, list[Fee]] | None:
     if row[PAYMENT_CURRENCY] != "CZK":
         msg = f"payment currency is {row[PAYMENT_CURRENCY]!r}, expected 'CZK'"
         raise RowError(msg)
-    if row[FEE_CURRENCY] != "CZK":
-        msg = f"fee currency is {row[FEE_CURRENCY]!r}, expected 'CZK'"
-        raise RowError(msg)
     # Paid amounts are negative, and include the fee.
     paid = -_decimal(row, PAYMENT)
     fee_czk = _decimal(row, FEE)
+    if fee_czk and row[FEE_CURRENCY] != "CZK":
+        msg = f"fee currency is {row[FEE_CURRENCY]!r}, expected 'CZK'"
+        raise RowError(msg)
     purchase = Purchase(
         platform="jt",
         portfolio_id=row[PORTFOLIO_ID],
@@ -109,7 +112,7 @@ def _purchase(row: dict[str, str]) -> tuple[Purchase, list[Fee]] | None:
         unit_price_currency=row[UNIT_PRICE_CURRENCY],
         czk=paid - fee_czk,
     )
-    return purchase, fee.charged_on(purchase, fee_czk)
+    return purchase, fee_czk
 
 
 def _is_cash_deposit(row: dict[str, str]) -> bool:
