@@ -45,11 +45,14 @@ def import_(data_dir: Path, files: tuple[Path, ...]) -> None:
         imported = read_files(files)
         store = Store(data_dir)
         purchases = store.add_purchases(imported.purchases)
+        fees = store.add_fees(imported.fees)
         ledger = store.add_ledger_entries(imported.ledger)
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
     if imported.purchases or not imported.ledger:
         click.echo(f"{purchases.added} Purchases added, {purchases.already_present} already present.")
+    if imported.fees:
+        click.echo(f"{fees.added} Fees added, {fees.already_present} already present.")
     if imported.ledger:
         click.echo(f"{ledger.added} ledger entries added, {ledger.already_present} already present.")
 
@@ -136,8 +139,17 @@ def chart(data_dir: Path) -> None:
         prices = store.fund_prices()
         rates = store.fx_rates()
         index_levels = store.index_levels()
+        fees = store.fees()
         today = clock.today()
-        t = timeline(purchases, ledger=ledger, prices=prices, rates=rates, index_levels=index_levels, today=today)
+        t = timeline(
+            purchases,
+            ledger=ledger,
+            fees=fees,
+            prices=prices,
+            rates=rates,
+            index_levels=index_levels,
+            today=today,
+        )
         # Only warnings, on stderr and on the page: the chart is still right up to each series' last point.
         warnings = out_of_date(
             prices=prices, rates=rates, index_levels=index_levels, fund_names=t.fund_names, today=today

@@ -12,9 +12,11 @@ from click.testing import CliRunner
 from inflation_station import clock
 from inflation_station.chart import write_chart
 from inflation_station.cli import main
+from inflation_station.fee import Fee
 from inflation_station.fund_price import FundPrice
 from inflation_station.ledger import BUY, DEPOSIT, LedgerEntry
 from inflation_station.purchase import Purchase
+from inflation_station.store import Store
 from inflation_station.valuation import timeline
 
 EXPORT = Path(__file__).parent / "fixtures" / "jt_export.csv"
@@ -163,6 +165,26 @@ def test_amount_invested_is_a_step_line_from_the_first_trade_date_to_today(tmp_p
     assert (invested["x"][-1], invested["y"][-1]) == ("2021-07-01", 235000)
     days_28_apr_to_1_jul = 65
     assert len(invested["x"]) == len(invested["y"]) == days_28_apr_to_1_jul  # one point per day
+
+
+def test_stored_fees_count_in_the_amount_invested_from_their_own_day(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", EXPORT)
+    # Charged on the fixture's FF World Purchase traded on 15 Jun 2021.
+    fee = Fee(
+        platform="jt",
+        portfolio_id="900000001",
+        source_row_id="900100003",
+        day=date(2021, 6, 15),
+        isin="LU1756523376",
+        czk=Decimal(100),
+    )
+    Store(tmp_path).add_fees([fee])
+    run("--data-dir", tmp_path, "chart")
+
+    invested = whole_portfolio_chart(tmp_path)["Amount invested"]
+    by_day = dict(zip(invested["x"], invested["y"], strict=True))
+    assert by_day["2021-06-15"] - by_day["2021-06-14"] == 13000 + 100
+    assert invested["y"][-1] == 235000 + 100
 
 
 def test_chart_makes_no_network_calls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

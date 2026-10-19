@@ -11,6 +11,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.pool import NullPool
 from sqlalchemy.types import TypeDecorator
 
+from inflation_station.fee import Fee
 from inflation_station.fund_price import FundPrice
 from inflation_station.fx_rate import FxRate
 from inflation_station.ledger import LedgerEntry
@@ -103,6 +104,20 @@ class LedgerEntryRecord(Base):
     unit_price: Mapped[Decimal | None]
     amount: Mapped[Decimal]
     currency: Mapped[str]
+    imported_at: Mapped[datetime]
+
+
+class FeeRecord(Base):
+    __tablename__ = "fee"
+    __table_args__ = (UniqueConstraint("platform", "portfolio_id", "source_row_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    platform: Mapped[str]
+    portfolio_id: Mapped[str]
+    source_row_id: Mapped[str]
+    day: Mapped[date]
+    isin: Mapped[str]
+    czk: Mapped[Decimal]
     imported_at: Mapped[datetime]
 
 
@@ -209,6 +224,23 @@ class Store:
                 added += 1
         return Added(added=added, already_present=already_present)
 
+    def add_fees(self, fees: Iterable[Fee]) -> Added:
+        imported_at = datetime.now(UTC)
+        fees = list(fees)
+        key_columns = (FeeRecord.platform, FeeRecord.portfolio_id, FeeRecord.source_row_id)
+        with Session(self._engine) as session, session.begin():
+            stored = session.execute(select(*key_columns).where(tuple_(*key_columns).in_([_key(f) for f in fees])))
+            seen = {tuple(row) for row in stored}
+            added = already_present = 0
+            for fee in fees:
+                if _key(fee) in seen:
+                    already_present += 1
+                    continue
+                seen.add(_key(fee))
+                session.add(_fee_record(fee, imported_at))
+                added += 1
+        return Added(added=added, already_present=already_present)
+
     def add_fund_prices(self, prices: Iterable[FundPrice]) -> Added:
         """Adds the prices not stored yet. A stored price is kept, even if `prices` has a different one that day."""
         prices = list(prices)
@@ -277,6 +309,10 @@ class Store:
         with Session(self._engine) as session:
             return [_ledger_entry(record) for record in session.scalars(select(LedgerEntryRecord))]
 
+    def fees(self) -> list[Fee]:
+        with Session(self._engine) as session:
+            return [_fee(record) for record in session.scalars(select(FeeRecord))]
+
     def fund_prices(self) -> list[FundPrice]:
         with Session(self._engine) as session:
             return [
@@ -299,7 +335,7 @@ class Store:
             ]
 
 
-def _key(row: Purchase | LedgerEntry) -> tuple[str, str, str]:
+def _key(row: Purchase | Fee | LedgerEntry) -> tuple[str, str, str]:
     """What identifies an imported row."""
     return (row.platform, row.portfolio_id, row.source_row_id)
 
@@ -332,3 +368,11 @@ def _ledger_record(e: LedgerEntry, imported_at: datetime) -> LedgerEntryRecord:
 
 def _ledger_entry(r: LedgerEntryRecord) -> LedgerEntry:
     return LedgerEntry(**{f.name: getattr(r, f.name) for f in fields(LedgerEntry)})
+
+
+def _fee_record(fee: Fee, imported_at: datetime) -> FeeRecord:
+    return FeeRecord(**{f.name: getattr(fee, f.name) for f in fields(Fee)}, imported_at=imported_at)
+
+
+def _fee(r: FeeRecord) -> Fee:
+    return Fee(**{f.name: getattr(r, f.name) for f in fields(Fee)})
