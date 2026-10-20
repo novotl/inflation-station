@@ -76,7 +76,7 @@ class RowError(Exception):
 
 
 @dataclass(frozen=True)
-class _Bought:
+class _PurchaseRow:
     """A Purchase row: what it imports as, and the CZK paid for it, Fee included, from which J&T portfolio."""
 
     rows: Rows
@@ -102,7 +102,7 @@ def read_export(path: Path) -> Rows:
 
     Raises on anything it doesn't understand, so nothing is half-read.
     """
-    bought: list[_Bought] = []
+    purchase_rows: list[_PurchaseRow] = []
     deposits: list[_CashDeposit] = []
     try:
         with path.open(encoding="utf-8-sig", newline="") as f:
@@ -117,24 +117,24 @@ def read_export(path: Path) -> Rows:
                     if _is_cash_deposit(row):
                         deposits.append(_cash_deposit(row, where))
                     else:
-                        bought.append(_purchase(row))
+                        purchase_rows.append(_purchase(row))
                 except RowError as e:
                     msg = f"{where}: {e}"
                     raise InflationStationError(msg) from e
     except (OSError, UnicodeDecodeError, csv.Error) as e:
         msg = f"cannot read {path}: {e}"
         raise InflationStationError(msg) from e
-    rows = Rows(deposits=_paired(deposits, bought))
-    for b in bought:
+    rows = Rows(deposits=_paired(deposits, purchase_rows))
+    for b in purchase_rows:
         rows += b.rows
     return rows
 
 
-def _paired(deposits: list[_CashDeposit], bought: list[_Bought]) -> list[Deposit]:
+def _paired(deposits: list[_CashDeposit], purchase_rows: list[_PurchaseRow]) -> list[Deposit]:
     """Each Deposit, in the Portfolio of the first Purchase not yet paired whose payment, Fee included, it equals, from
     the same J&T portfolio and traded within PAIRING_WINDOW of it. Raises on a Deposit with no such Purchase.
     """
-    unpaired = sorted(bought, key=lambda b: (b.purchase.day, b.purchase.source_row_id))
+    unpaired = sorted(purchase_rows, key=lambda b: (b.purchase.day, b.purchase.source_row_id))
     paired = []
     for d in sorted(deposits, key=lambda d: (d.day, d.source_row_id)):
         b = next(
@@ -170,7 +170,7 @@ def _cash_deposit(row: dict[str, str], where: str) -> _CashDeposit:
     )
 
 
-def _purchase(row: dict[str, str]) -> _Bought:
+def _purchase(row: dict[str, str]) -> _PurchaseRow:
     """The Purchase in a row, its Fee unless that is zero, and the Conversion paying for it unless it is priced in
     CZK, with what the row paid.
     """
@@ -215,7 +215,7 @@ def _purchase(row: dict[str, str]) -> _Bought:
         currency=currency,
         amount=amount,
     )
-    return _Bought(rows + Rows(purchases=[purchase]), purchase, row[PORTFOLIO], paid)
+    return _PurchaseRow(rows + Rows(purchases=[purchase]), purchase, row[PORTFOLIO], paid)
 
 
 def _currency(row: dict[str, str], column: str) -> str:

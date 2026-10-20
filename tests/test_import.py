@@ -186,11 +186,11 @@ def test_jt_deposit_with_no_purchase_to_pair_with_fails_naming_the_row_and_impor
 @pytest.mark.parametrize(
     ("deposited", "exit_code"),
     [
-        # J&T now takes the Deposit before the trade, up to 6 days.
+        # J&T now takes the Deposit before the trade, and used to settle after it: up to 7 days either way.
         ("28.04.2021", 0),
-        ("22.04.2021", 0),
+        ("21.04.2021", 0),
         ("20.04.2021", 1),
-        # It used to settle after the trade.
+        ("05.05.2021", 0),
         ("06.05.2021", 1),
     ],
 )
