@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from inflation_station import investika
-from inflation_station.domain import Fee, Fund, Platform, Portfolio, Purchase, Rows
+from inflation_station.domain import Deposit, Fee, Fund, Platform, Portfolio, Purchase, Rows
 from inflation_station.errors import InflationStationError
 
 INVESTIKA = Path(__file__).parent / "fixtures" / "investika"
@@ -39,33 +39,71 @@ FEES = [
     Fee(CONTRACT, "2026-09-10T11:02:49", date(2026, 8, 31), Decimal("101.09"), "CZK"),
     Fee(CONTRACT, "2021-05-10T16:21:05", date(2021, 4, 30), Decimal("201.50"), "CZK"),
 ]
-ROWS = Rows(purchases=ISSUES, fees=FEES)
+# The cash statement's deposits; identical ones on one day are told apart by their count.
+DEPOSITS = [
+    Deposit(CONTRACT, "2026-08-03;5000.00;1", date(2026, 8, 3), Decimal(5000), "CZK"),
+    Deposit(CONTRACT, "2021-04-19;10200.00;1", date(2021, 4, 19), Decimal(10200), "CZK"),
+]
+ROWS = Rows(deposits=DEPOSITS, purchases=ISSUES, fees=FEES)
 
 
 def statement(fixture: str) -> investika.Statement:
     return investika.statement(fixture, (INVESTIKA / fixture).read_text(encoding="utf-8").splitlines())
 
 
-def purchases_and_fees(*fixtures: str | investika.Statement) -> Rows:
-    """Purchases and Fees from fixture files, or from statements a test has changed."""
-    return investika.purchases_and_fees([statement(f) if isinstance(f, str) else f for f in fixtures])
+def rows(*fixtures: str | investika.Statement) -> Rows:
+    """Rows from fixture files, or from statements a test has changed."""
+    return investika.rows([statement(f) if isinstance(f, str) else f for f in fixtures])
 
 
 def fails(*fixtures: str | investika.Statement, error: str) -> None:
     with pytest.raises(InflationStationError, match=f"^{re.escape(error)}$"):
-        purchases_and_fees(*fixtures)
+        rows(*fixtures)
 
 
-def test_one_purchase_per_issue_and_a_fee_of_the_rest_of_its_payment() -> None:
-    assert purchases_and_fees("cash.txt", "holdings.txt") == ROWS
+def test_one_deposit_per_deposit_row_one_purchase_per_issue_and_a_fee_of_the_rest_of_its_payment() -> None:
+    assert rows("cash.txt", "holdings.txt") == ROWS
 
 
 def test_the_pair_may_be_given_in_either_order() -> None:
-    assert purchases_and_fees("holdings.txt", "cash.txt") == ROWS
+    assert rows("holdings.txt", "cash.txt") == ROWS
 
 
-def test_pending_payment_is_skipped() -> None:
-    assert purchases_and_fees("cash_pending_payment.txt", "holdings.txt") == ROWS
+def test_pending_payment_is_skipped_but_its_deposit_is_not() -> None:
+    pending = Deposit(CONTRACT, "2026-10-01;5000.00;1", date(2026, 10, 1), Decimal(5000), "CZK")
+    assert rows("cash_pending_payment.txt", "holdings.txt") == Rows(
+        deposits=[pending, *DEPOSITS], purchases=ISSUES, fees=FEES
+    )
+
+
+def test_identical_deposits_on_one_day_are_told_apart() -> None:
+    cash = statement("cash.txt")
+    deposit = next(line for line in cash.lines if "03.08.2026" in line and "Kredit" in line)
+    got = rows(investika.statement("cash.txt", [*cash.lines, deposit]), "holdings.txt")
+    assert [d.source_row_id for d in got.deposits] == [
+        "2026-08-03;5000.00;1",
+        "2021-04-19;10200.00;1",
+        "2026-08-03;5000.00;2",
+    ]
+
+
+def test_non_czk_deposit_is_not_implemented() -> None:
+    lines = (
+        (INVESTIKA / "cash.txt")
+        .read_text(encoding="utf-8")
+        .replace("Kredit            5 000,00 CZK", "Kredit            200,00 EUR")
+        .splitlines()
+    )
+    with pytest.raises(
+        NotImplementedError,
+        match="^"
+        + re.escape(
+            "cash.txt row 'Investice klienta - vklad na VÚ' on 03.08.2026: "
+            "a Deposit in 'EUR'; only CZK Deposits can be imported yet"
+        )
+        + "$",
+    ):
+        investika.rows([investika.statement("cash.txt", lines), statement("holdings.txt")])
 
 
 def test_issue_with_no_matching_payment_fails() -> None:
@@ -141,8 +179,8 @@ def test_two_statements_of_one_kind_for_a_portfolio_fail() -> None:
     )
 
 
-def test_no_statements_give_no_purchases() -> None:
-    assert investika.purchases_and_fees([]) == Rows()
+def test_no_statements_give_no_rows() -> None:
+    assert investika.rows([]) == Rows()
 
 
 def test_payment_smaller_than_the_issue_fails() -> None:
@@ -232,7 +270,7 @@ def test_two_issues_settled_at_the_same_time_fail() -> None:
 def test_malformed_holdings_row_fails(original: str, broken: str, error: str) -> None:
     lines = (INVESTIKA / "holdings.txt").read_text(encoding="utf-8").replace(original, broken, 1).splitlines()
     with pytest.raises(InflationStationError, match=f"^{re.escape(error)}$"):
-        investika.purchases_and_fees([statement("cash.txt"), investika.statement("holdings.txt", lines)])
+        investika.rows([statement("cash.txt"), investika.statement("holdings.txt", lines)])
 
 
 def test_malformed_cash_amount_fails() -> None:
@@ -244,7 +282,7 @@ def test_malformed_cash_amount_fails() -> None:
             "Částka '5 000,00' is not an amount like '5 000,00 CZK'"
         ),
     ):
-        investika.purchases_and_fees([investika.statement("cash.txt", lines), statement("holdings.txt")])
+        investika.rows([investika.statement("cash.txt", lines), statement("holdings.txt")])
 
 
 def test_lines_without_a_title_are_not_a_statement() -> None:
@@ -276,9 +314,30 @@ def test_statement_without_a_portfolio_number_fails() -> None:
             "Odchozí platba z VÚ na investici Debet",
             "cash.txt row on 03.08.2026: has 3 columns, expected 4 or 5",
         ),
+        (
+            "Kredit            5 000,00 CZK",
+            "Debet            5 000,00 CZK",
+            "cash.txt row 'Investice klienta - vklad na VÚ' on 03.08.2026: Typ is 'Debet', expected 'Kredit'",
+        ),
+        (
+            "Kredit            5 000,00 CZK",
+            "Kredit            5 000,x0 CZK",
+            (
+                "cash.txt row 'Investice klienta - vklad na VÚ' on 03.08.2026: "
+                "Částka '5 000,x0' is not a number like '1 501,01'"
+            ),
+        ),
+        (
+            "Kredit            5 000,00 CZK",
+            "Kredit            5 000,00",
+            (
+                "cash.txt row 'Investice klienta - vklad na VÚ' on 03.08.2026: "
+                "Částka '5 000,00' is not an amount like '5 000,00 CZK'"
+            ),
+        ),
     ],
 )
 def test_malformed_cash_row_fails(original: str, broken: str, error: str) -> None:
     lines = (INVESTIKA / "cash.txt").read_text(encoding="utf-8").replace(original, broken, 1).splitlines()
     with pytest.raises(InflationStationError, match=f"^{re.escape(error)}$"):
-        investika.purchases_and_fees([investika.statement("cash.txt", lines), statement("holdings.txt")])
+        investika.rows([investika.statement("cash.txt", lines), statement("holdings.txt")])

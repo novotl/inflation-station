@@ -24,7 +24,7 @@ def read_files(paths: Iterable[Path]) -> Rows:
             rows += portu.read_export(path)
         else:
             rows += jt.read_export(path)
-    return rows + investika.purchases_and_fees(statements)
+    return rows + investika.rows(statements)
 
 
 def _is_pdf(path: Path) -> bool:

@@ -18,6 +18,9 @@ FIXTURES = Path(__file__).parent / "fixtures"
 EXPORT = FIXTURES / "jt_export.csv"
 INVESTIKA_CASH = FIXTURES / "investika" / "cash.pdf"
 INVESTIKA_HOLDINGS = FIXTURES / "investika" / "holdings.pdf"
+INVESTIKA_ADDED = (
+    "3 Deposits added, 0 already present.\n2 Purchases added, 0 already present.\n2 Fees added, 0 already present.\n"
+)
 REPO_DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 # One Portfolio per Fund bought in J&T portfolio 900000001.
 WORLD_FUND = Portfolio(Platform.JT, "900000001 LU1756523376", "FF - World Fund A-ACC-CZK")
@@ -378,10 +381,10 @@ def test_migrations_match_the_models(tmp_path: Path) -> None:
         assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
 
 
-def test_investika_pair_imports_one_purchase_per_issue(tmp_path: Path) -> None:
+def test_investika_pair_imports_deposits_and_one_purchase_per_issue(tmp_path: Path) -> None:
     assert run("--data-dir", tmp_path, "import", INVESTIKA_CASH, INVESTIKA_HOLDINGS) == (
         0,
-        "2 Purchases added, 0 already present.\n2 Fees added, 0 already present.\n",
+        INVESTIKA_ADDED,
         "",
     )
 
@@ -407,6 +410,13 @@ def test_investika_pair_imports_one_purchase_per_issue(tmp_path: Path) -> None:
         Decimal("101.09"),
         "CZK",
     )
+    # The Deposits cover the Purchases and Fees, and the pending payment of 01.10.2026.
+    assert sorted((d.day, d.amount, d.currency) for d in rows.deposits) == [
+        (date(2021, 4, 19), Decimal(10200), "CZK"),
+        (date(2026, 8, 3), Decimal(5000), "CZK"),
+        (date(2026, 10, 1), Decimal(5000), "CZK"),
+    ]
+    assert {d.portfolio for d in rows.deposits} == {issue.portfolio}
 
 
 def test_reimporting_investika_statements_adds_nothing(tmp_path: Path) -> None:
@@ -414,7 +424,10 @@ def test_reimporting_investika_statements_adds_nothing(tmp_path: Path) -> None:
 
     assert run("--data-dir", tmp_path, "import", INVESTIKA_HOLDINGS, INVESTIKA_CASH) == (
         0,
-        "0 Purchases added, 2 already present.\n0 Fees added, 2 already present.\n",
+        (
+            "0 Deposits added, 3 already present.\n"
+            "0 Purchases added, 2 already present.\n0 Fees added, 2 already present.\n"
+        ),
         "",
     )
 
@@ -423,7 +436,7 @@ def test_jt_export_and_investika_pair_import_together(tmp_path: Path) -> None:
     assert run("--data-dir", tmp_path, "import", EXPORT, INVESTIKA_CASH, INVESTIKA_HOLDINGS) == (
         0,
         (
-            "7 Deposits added, 0 already present.\n"
+            "10 Deposits added, 0 already present.\n"
             "9 Purchases added, 0 already present.\n9 Fees added, 0 already present.\n"
             "3 Conversions added, 0 already present.\n"
         ),
@@ -459,7 +472,7 @@ def test_bad_file_among_several_fails_and_imports_nothing(tmp_path: Path) -> Non
     assert err.startswith("Error: jt_export_unknown_movement.csv row 3 ")
 
     _, out, _ = run("--data-dir", tmp_path, "import", INVESTIKA_CASH, INVESTIKA_HOLDINGS)
-    assert out == "2 Purchases added, 0 already present.\n2 Fees added, 0 already present.\n"
+    assert out == INVESTIKA_ADDED
 
 
 def test_pdf_that_is_not_an_investika_statement_fails(tmp_path: Path) -> None:
