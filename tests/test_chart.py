@@ -62,7 +62,7 @@ def whole_portfolio_chart(data_dir: Path) -> dict[str, dict]:
 
 
 def composition(data_dir: Path) -> dict[str, dict]:
-    """The traces by name of the Whole Portfolio chart with its value split into stacked fund values."""
+    """The traces by name of the Whole Portfolio chart with its value split into stacked Portfolio values."""
     return by_name(page(data_dir)["wholePortfolio"]["composition"])
 
 
@@ -79,16 +79,6 @@ def not_valued(stderr: str) -> list[str]:
 def warned_of_other_than_negative_cash(stderr: str) -> str:
     """`stderr` without its Negative Cash warnings: the fixture's J&T Deposits came a few days after their trades."""
     return "".join(line for line in stderr.splitlines(keepends=True) if not line.startswith("Negative Cash"))
-
-
-def hover(line: dict, n: int) -> str:
-    """The hover text of a line's nth point, as plotly would fill in its template."""
-    text = line["hovertemplate"].replace("%{y:,.2f}", f"{line['y'][n]:,.2f}")
-    for m, value in enumerate(line["customdata"][n]):
-        if isinstance(value, float):
-            text = text.replace(f"%{{customdata[{m}]:,.2f}}", f"{value:,.2f}")
-        text = text.replace(f"%{{customdata[{m}]}}", str(value))
-    return text.removesuffix("<extra></extra>")
 
 
 def test_chart_writes_an_html_file_in_the_data_directory(tmp_path: Path) -> None:
@@ -112,11 +102,17 @@ def test_chart_before_fetching_prices_names_the_funds_it_could_not_value(tmp_pat
     ]
     # Only the CZK Cash is valued: by 1 Jul, every Deposit has been spent.
     assert set(whole_portfolio_chart(tmp_path)) == {"Whole Portfolio value", "Amount invested"}
-    assert set(composition(tmp_path)) == {"Cash", "Amount invested"}
+    assert set(composition(tmp_path)) == {
+        "J&T Banka · J&T MONEY A CZK OPF",
+        "J&T Banka · FTIF-Franklin Technology Fund-A(acc)EUR",
+        "J&T Banka · FF - World Fund A-ACC-CZK",
+        "J&T Banka · AMUNDI FUNDS US PIONEER FUND - A EUR (C)",
+        "Amount invested",
+    }
     assert page(tmp_path)["wholePortfolio"]["value"] == 0
 
 
-def test_after_fetching_prices_the_chart_has_a_whole_portfolio_line_and_stacks_each_czk_funds_value(
+def test_after_fetching_prices_the_chart_has_a_whole_portfolio_line_and_stacks_each_portfolios_value(
     tmp_path: Path,
 ) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
@@ -127,19 +123,18 @@ def test_after_fetching_prices_the_chart_has_a_whole_portfolio_line_and_stacks_e
     assert set(lines) == {"Amount invested", "Whole Portfolio value"}
     assert lines["Whole Portfolio value"]["y"][-1] == pytest.approx(FF_WORLD + JT_MONEY)
     assert len(lines["Whole Portfolio value"]["y"]) == len(lines["Amount invested"]["y"])
-    # The fund values stack up to the Whole Portfolio value, largest fund on top.
+    # The Portfolio values stack up to the Whole Portfolio value, largest on top. The EUR funds' Portfolios are
+    # valued by their CZK Cash only, all spent by 1 Jul.
     stacked = page(tmp_path)["wholePortfolio"]["composition"]
     assert [t["name"] for t in stacked] == [
-        "Cash",
-        "J&T MONEY A CZK OPF",
-        "FF - World Fund A-ACC-CZK",
+        "J&T Banka · AMUNDI FUNDS US PIONEER FUND - A EUR (C)",
+        "J&T Banka · FTIF-Franklin Technology Fund-A(acc)EUR",
+        "J&T Banka · J&T MONEY A CZK OPF",
+        "J&T Banka · FF - World Fund A-ACC-CZK",
         "Amount invested",
     ]
-    assert [t.get("stackgroup") for t in stacked] == ["value", "value", "value", None]
-    # Every Deposit has paid for its Purchase by 1 Jul.
-    assert stacked[0]["y"][-1] == 0
-    assert stacked[1]["y"][-1] == pytest.approx(JT_MONEY)
-    assert stacked[2]["y"][-1] == pytest.approx(FF_WORLD)
+    assert [t.get("stackgroup") for t in stacked] == ["value", "value", "value", "value", None]
+    assert [t["y"][-1] for t in stacked[:4]] == pytest.approx([0, 0, JT_MONEY, FF_WORLD])
 
 
 def test_chart_before_fetching_rates_names_the_eur_funds_it_could_not_value(tmp_path: Path) -> None:
@@ -161,16 +156,8 @@ def test_after_fetching_prices_and_rates_the_chart_values_every_fund_in_czk(tmp_
 
     assert not_valued(run("--data-dir", tmp_path, "chart")[2]) == []  # nothing left out
     lines = composition(tmp_path)
-    assert set(lines) == {
-        "Cash",
-        "Amount invested",
-        "J&T MONEY A CZK OPF",
-        "FF - World Fund A-ACC-CZK",
-        "FTIF-Franklin Technology Fund-A(acc)EUR",
-        "AMUNDI FUNDS US PIONEER FUND - A EUR (C)",
-    }
-    assert lines["FTIF-Franklin Technology Fund-A(acc)EUR"]["y"][-1] == pytest.approx(FRANKLIN)
-    assert lines["AMUNDI FUNDS US PIONEER FUND - A EUR (C)"]["y"][-1] == pytest.approx(AMUNDI)
+    assert lines["J&T Banka · FTIF-Franklin Technology Fund-A(acc)EUR"]["y"][-1] == pytest.approx(FRANKLIN)
+    assert lines["J&T Banka · AMUNDI FUNDS US PIONEER FUND - A EUR (C)"]["y"][-1] == pytest.approx(AMUNDI)
     assert whole_portfolio_chart(tmp_path)["Whole Portfolio value"]["y"][-1] == pytest.approx(
         FF_WORLD + JT_MONEY + FRANKLIN + AMUNDI
     )
@@ -317,9 +304,9 @@ def test_each_line_has_the_role_that_colours_it_the_same_on_every_chart(tmp_path
         "Inflation hurdle (Eurostat HICP)": "inflation",
         "Inflation hurdle (Eurostat HICP, estimated)": "inflation",
     }
-    assert by_name(data["funds"][2]["chart"])["Value"]["meta"] == "value"
-    # Stacked fund values take the colourway, one colour per fund.
-    assert "meta" not in composition(tmp_path)["FF - World Fund A-ACC-CZK"]
+    assert by_name(data["platformTotals"][0]["chart"])["Value"]["meta"] == "value"
+    # Stacked Portfolio values take the colourway, one colour per Portfolio.
+    assert "meta" not in composition(tmp_path)["J&T Banka · FF - World Fund A-ACC-CZK"]
     # The relative lines take the colour of what they're measured against.
     assert [(t["name"], t["meta"]) for t in data["wholePortfolio"]["relative"]] == [
         ("real", "inflation"),
@@ -423,19 +410,6 @@ def test_chart_warns_only_of_the_series_that_are_out_of_date(tmp_path: Path, mon
     )
 
 
-def test_each_fund_hovers_with_its_units_and_its_value_in_its_own_currency(tmp_path: Path) -> None:
-    fetch_everything(tmp_path)
-    run("--data-dir", tmp_path, "chart")
-
-    lines = composition(tmp_path)
-    assert hover(lines["FTIF-Franklin Technology Fund-A(acc)EUR"], -1) == (
-        f"{FRANKLIN:,.2f} CZK ({11.15 * 37.86:,.2f} EUR) · 11.15 units"
-    )
-    # CZK funds have no bracketed amount; units are shown as stored, trailing zeros trimmed.
-    assert hover(lines["FF - World Fund A-ACC-CZK"], -1) == f"{FF_WORLD:,.2f} CZK · 79.9 units"
-    assert hover(lines["J&T MONEY A CZK OPF"], -1) == f"{JT_MONEY:,.2f} CZK · 70,705 units"
-
-
 def test_whole_portfolio_invested_and_hurdle_lines_hover_with_their_czk_value_only(tmp_path: Path) -> None:
     fetch_everything(tmp_path)
     run("--data-dir", tmp_path, "chart")
@@ -473,15 +447,6 @@ def test_each_fund_has_its_figures_on_the_last_day(tmp_path: Path) -> None:
     assert (ff_world["currencyValue"], ff_world["units"]) == (None, "79.9")
 
 
-def test_a_funds_chart_has_its_value_in_czk_only(tmp_path: Path) -> None:
-    fetch_everything(tmp_path)
-    run("--data-dir", tmp_path, "chart")
-
-    (value,) = page(tmp_path)["funds"][2]["chart"]
-    # Hovers as the fund's line on the Whole Portfolio chart does.
-    assert hover(value, -1) == f"{FRANKLIN:,.2f} CZK ({11.15 * 37.86:,.2f} EUR) · 11.15 units"
-
-
 def test_funds_that_cannot_be_valued_come_last_saying_why(tmp_path: Path) -> None:
     run("--data-dir", tmp_path, "import", EXPORT)
     run("--data-dir", tmp_path, "fetch-prices")
@@ -492,7 +457,7 @@ def test_funds_that_cannot_be_valued_come_last_saying_why(tmp_path: Path) -> Non
     # The EUR funds have no rates, so only the CZK funds are valued.
     assert [f["isin"] for f in funds] == ["LU1756523376", "CZ0008473808", "LU0260870158", "LU1883872332"]
     franklin = funds[2]
-    assert (franklin["notValued"], franklin["value"], franklin["chart"]) == ("no EUR rates stored", None, [])
+    assert (franklin["notValued"], franklin["value"]) == ("no EUR rates stored", None)
     assert franklin["units"] == "11.15"
     assert funds[0]["notValued"] is None
 
@@ -552,6 +517,53 @@ def test_each_portfolio_has_a_section_headed_by_its_platform_and_name_largest_va
     assert [t["name"] for t in jt["relative"]] == ["real", "nominal"]
 
 
+def test_each_platform_has_a_total_section_adding_up_its_portfolios_largest_value_first(tmp_path: Path) -> None:
+    fetch_everything(tmp_path)
+    run("--data-dir", tmp_path, "import", PORTU_EXPORT)
+    run("--data-dir", tmp_path, "chart")
+
+    jt, portu = page(tmp_path)["platformTotals"]
+    assert (jt["name"], portu["name"]) == ("J&T Banka", "Portu")
+    assert jt["key"] != portu["key"]
+    # J&T's four Portfolios, one per Fund, added together.
+    assert jt["value"] == pytest.approx(FF_WORLD + JT_MONEY + FRANKLIN + AMUNDI)
+    assert jt["invested"] == 235000  # noqa: PLR2004 - the fixture's seven Deposits
+    assert jt["benchmarkHurdle"] == pytest.approx(hurdle_on_1_jul(CSU_MAY))
+    assert [h["name"] for h in jt["hurdles"]] == ["ČSÚ CPI", "Eurostat HICP"]
+    assert (jt["notValued"], jt["leftOut"]) == (None, [])
+    # Portu's one Portfolio is its total.
+    (moje_portfolio,) = (p for p in page(tmp_path)["portfolios"] if p["name"] == "Portu · Moje portfolio")
+    assert {k: v for k, v in portu.items() if k not in {"key", "name"}} == {
+        k: v for k, v in moje_portfolio.items() if k not in {"key", "name"}
+    }
+    # Charted as a Portfolio is.
+    assert {name: line["meta"] for name, line in by_name(jt["chart"]).items()} == {
+        "Value": "value",
+        "Amount invested": "invested",
+        "Inflation hurdle (ČSÚ CPI)": "inflation",
+        "Inflation hurdle (ČSÚ CPI, estimated)": "inflation",
+        "Inflation hurdle (Eurostat HICP)": "inflation",
+        "Inflation hurdle (Eurostat HICP, estimated)": "inflation",
+    }
+    assert by_name(jt["chart"])["Value"]["y"][-1] == pytest.approx(FF_WORLD + JT_MONEY + FRANKLIN + AMUNDI)
+    assert [t["name"] for t in jt["relative"]] == ["real", "nominal"]
+
+
+def test_a_platform_total_names_what_its_value_leaves_out_once(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", EXPORT)
+    run("--data-dir", tmp_path, "fetch-prices")
+    run("--data-dir", tmp_path, "chart")
+
+    (jt,) = page(tmp_path)["platformTotals"]
+    # Two of its Portfolios hold EUR Cash, neither valued without rates.
+    assert jt["leftOut"] == [
+        "FTIF-Franklin Technology Fund-A(acc)EUR (no EUR rates stored)",
+        "AMUNDI FUNDS US PIONEER FUND - A EUR (C) (no EUR rates stored)",
+        "EUR Cash (no EUR rates stored)",
+    ]
+    assert jt["value"] == pytest.approx(FF_WORLD + JT_MONEY)
+
+
 def test_each_fund_section_is_a_holding_naming_its_portfolio(tmp_path: Path) -> None:
     fetch_everything(tmp_path)
     run("--data-dir", tmp_path, "chart")
@@ -562,7 +574,6 @@ def test_each_fund_section_is_a_holding_naming_its_portfolio(tmp_path: Path) -> 
         ("J&T Banka · FTIF-Franklin Technology Fund-A(acc)EUR", "FTIF-Franklin Technology Fund-A(acc)EUR"),
         ("J&T Banka · AMUNDI FUNDS US PIONEER FUND - A EUR (C)", "AMUNDI FUNDS US PIONEER FUND - A EUR (C)"),
     }
-    assert len({f["key"] for f in page(tmp_path)["funds"]}) == 4  # noqa: PLR2004 - the fixture's funds
 
 
 def test_holdings_show_units_but_no_amount_invested_or_hurdle(tmp_path: Path) -> None:
@@ -576,7 +587,7 @@ def test_holdings_show_units_but_no_amount_invested_or_hurdle(tmp_path: Path) ->
         ("IE00B5BMR087", "0.25", "no prices stored"),
         ("IE00BCBJG560", "0.75", "no prices stored"),
     ]
-    assert all(f["chart"] == [] and not {"invested", "benchmarkHurdle", "relative", "managed"} & set(f) for f in portu)
+    assert all(not {"invested", "benchmarkHurdle", "relative", "managed"} & set(f) for f in portu)
 
 
 MOJE_PORTFOLIO = Portfolio(Platform.PORTU, "Moje portfolio", "Moje portfolio")
@@ -589,7 +600,7 @@ def portu_buy(fund: Fund, units: int, currency: str = "CZK") -> Purchase:
     )
 
 
-def test_a_valued_holding_charts_its_value_only(tmp_path: Path) -> None:
+def test_a_holding_has_no_line_of_its_own(tmp_path: Path) -> None:
     deposit = Deposit(MOJE_PORTFOLIO, "1", date(2021, 6, 13), Decimal(500), "CZK")
     t = timeline(
         Rows(deposits=[deposit], purchases=[portu_buy(Fund("IE00B53QG562", "SXR7 GY"), units=2)]),
@@ -599,8 +610,8 @@ def test_a_valued_holding_charts_its_value_only(tmp_path: Path) -> None:
     write_chart(t, tmp_path)
 
     (holding,) = page(tmp_path)["funds"]
-    assert [line["name"] for line in holding["chart"]] == ["Value"]
-    assert hover(holding["chart"][0], -1) == "220.00 CZK · 2 units"
+    assert (holding["value"], holding["units"]) == (220, "2")
+    assert "chart" not in holding
     # The Portfolio's value is its Holding plus its Cash: 300 CZK left of the Deposit.
     assert page(tmp_path)["portfolios"][0]["value"] == 520  # noqa: PLR2004
     assert page(tmp_path)["portfolios"][0]["leftOut"] == []
@@ -637,13 +648,7 @@ def test_one_fund_in_two_portfolios_is_two_holdings_each_naming_its_portfolio(tm
         ("J&T Banka · 900000002", 30),
         ("J&T Banka · 900000001", 20),
     ]
-    assert len({f["key"] for f in funds}) == 2  # noqa: PLR2004 - one per Holding
-    assert set(composition(tmp_path)) == {
-        "Cash",
-        "FF - World Fund A-ACC-CZK (J&T Banka · 900000001)",
-        "FF - World Fund A-ACC-CZK (J&T Banka · 900000002)",
-        "Amount invested",
-    }
+    assert set(composition(tmp_path)) == {"J&T Banka · 900000001", "J&T Banka · 900000002", "Amount invested"}
 
 
 def test_a_portfolio_with_nothing_valued_says_whether_its_funds_or_its_cash_are_missing(tmp_path: Path) -> None:

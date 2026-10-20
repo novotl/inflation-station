@@ -71,7 +71,7 @@ const legendFor = n => innerWidth < 760 ? { orientation: "h", x: 0, xanchor: "le
 const CONFIG = { responsive: true, displaylogo: false, displayModeBar: false };
 async function plot(el, traces, layout = {}, { pct = false } = {}) {
   if (typeof el === "string") el = document.getElementById(el);
-  // Copies, as plotly keeps and changes what it's given and the fund strip draws the same traces again.
+  // Copies, as plotly keeps and changes what it's given and the strip draws the same traces again.
   const data = traces.map(t => ({ ...t, line: { ...t.line } }));
   const legend = { font: { size: 11 }, ...legendFor(data.length), ...(layout.legend || {}) };
   const margin = { ...BASE_LAYOUT.margin, ...(legend.y > 1 && layout.showlegend !== false ? { t: 36 } : {}), ...(layout.margin || {}) };
@@ -92,15 +92,12 @@ const relativeShapes = () => [
 
 // A Holding's ISIN and Portfolio, and why it isn't valued.
 const holdingLine = f => `${esc(f.isin)} · ${esc(f.portfolio)}${f.notValued ? ` · <span class="neg">not valued: ${esc(f.notValued)}</span>` : ""}`;
-// A chart, or why there is none: a Holding that can't be valued has nothing to draw.
-const czkChartOr = (el, item, height) => item.chart.length ? czkChart(el, item.chart, height)
-  : el.innerHTML = `<p class="neg" style="padding:24px 0">Not valued: ${esc(item.notValued)}</p>`;
 
-// Why a Portfolio has no value, or what its value leaves out.
+// Why a Portfolio or Platform total has no value, or what its value leaves out.
 const portfolioNotes = a => a.notValued ? `<p class="warn">Not valued: ${esc(a.notValued)}</p>`
   : a.leftOut.length ? `<p class="warn">Left out of its value: ${a.leftOut.map(esc).join(", ")}</p>` : "";
 
-// ---------- dashboard: figures, the Whole Portfolio chart, a section per Portfolio, a table of funds whose rows open their chart ----------
+// ---------- dashboard: figures, the Whole Portfolio chart, a section per Platform total and per Portfolio, a table of funds ----------
 function renderDashboard(el) {
   const kpi = (label, big, sub = "") => `<div class="kpi"><div class="label">${esc(label)}</div><div class="big">${big}</div><div class="sub">${sub}</div></div>`;
   const signed = (x, html) => `<span class="${cls(x)}">${html}</span>`;
@@ -112,12 +109,12 @@ function renderDashboard(el) {
     ${P.hurdles.map(h => kpi(`vs inflation (${h.name})`, signed(minus(P.value, h.value), czk(minus(P.value, h.value))),
       `${signed(vs(P.value, h.value), pct(vs(P.value, h.value)))} <span class="muted">· hurdle ${czk(h.value)}</span>`)).join("")}
     </div><div class="card"><div id="dashboard-chart"></div></div>
-    <h2>Portfolios</h2><div class="portfolio-cards"></div>
+    <h2>Platform totals</h2><div class="portfolio-cards platform-totals"></div>
+    <h2>Portfolios</h2><div class="portfolio-cards portfolios"></div>
     <h2>Funds</h2><div class="card table-card"><table class="funds"><thead><tr><th>Fund</th><th>Priced in</th><th>Value</th>
     <th>Units</th></tr></thead><tbody></tbody></table></div>`;
   czkChart("dashboard-chart", P.chart, 420);
-  const portfolios = el.querySelector(".portfolio-cards");
-  D.portfolios.forEach(a => {
+  const section = (cards, a) => {
     const card = document.createElement("div");
     card.className = "card";
     const gain = minus(a.value, a.invested);
@@ -127,25 +124,18 @@ function renderDashboard(el) {
       ${a.hurdles.map(h => `<div><b>vs ${esc(h.name)}</b>${signed(minus(a.value, h.value), czk(minus(a.value, h.value)))}
         ${signed(vs(a.value, h.value), pct(vs(a.value, h.value)))}</div>`).join("")}
       </div>${portfolioNotes(a)}<div></div>`;
-    portfolios.append(card);
+    cards.append(card);
     czkChart(card.lastElementChild, a.chart, 360);
-  });
+  };
+  D.platformTotals.forEach(a => section(el.querySelector(".platform-totals"), a));
+  D.portfolios.forEach(a => section(el.querySelector(".portfolios"), a));
   const tbody = el.querySelector("tbody");
   D.funds.forEach(f => {
     const row = document.createElement("tr");
-    row.className = "row";
     row.innerHTML = `<td>${esc(f.name)}<div class="isin">${holdingLine(f)}</div></td>
       <td>${esc(f.pricedIn)}</td><td>${czk(f.value)}${f.currencyValue ? `<div class="isin">${abs(esc(f.currencyValue))}</div>` : ""}</td>
       <td>${abs(esc(f.units))}</td>`;
-    const detail = document.createElement("tr");
-    detail.hidden = true;
-    detail.innerHTML = `<td colspan="4" style="text-align:left"><div></div></td>`;
-    row.onclick = () => {
-      detail.hidden = !detail.hidden;
-      row.classList.toggle("open", !detail.hidden);
-      if (!detail.hidden && !detail.dataset.drawn) { detail.dataset.drawn = "1"; czkChartOr(detail.querySelector("div"), f, 360); }
-    };
-    tbody.append(row, detail);
+    tbody.append(row);
   });
 }
 
@@ -165,10 +155,12 @@ function renderRelative(el) {
       <div class="kpi"><div class="label">Whole Portfolio vs invested</div><div class="big ${cls(nominal)}">${pct(nominal)}</div>
         <div class="sub muted">${czk(P.value)} vs ${czk(P.invested)}</div></div></div>
     <div class="card"><div id="relative-chart"></div></div>
-    <h2>Per Portfolio <span class="muted" style="font-size:14px;font-weight:normal">(same scale everywhere)</span></h2>
+    <h2>Per Platform total <span class="muted" style="font-size:14px;font-weight:normal">(same scale everywhere)</span></h2>
+    <div class="grid platform-totals"></div>
+    <h2>Per Portfolio</h2>
     <div class="grid portfolios"></div>`;
   plot("relative-chart", P.relative, { yaxis: { tickformat: "+.0%", zeroline: false }, shapes: relativeShapes(), height: 380, margin: { t: 10 } }, { pct: true });
-  const all = D.portfolios.flatMap(a => a.relative.flatMap(t => t.y)).filter(y => y != null);
+  const all = [...D.platformTotals, ...D.portfolios].flatMap(a => a.relative.flatMap(t => t.y)).filter(y => y != null);
   const range = all.length ? [Math.min(...all) - .05, Math.max(...all) + .05] : undefined;
   const cell = (grid, name, item, sub) => {
     const now = D.benchmark ? vs(item.value, item.benchmarkHurdle) : vs(item.value, item.invested);
@@ -182,45 +174,37 @@ function renderRelative(el) {
     plot(chart, item.relative, { yaxis: { tickformat: "+.0%", range, zeroline: false }, shapes: relativeShapes(), showlegend: false,
       height: 220, margin: { t: 6, b: 30, l: 50, r: 10 } }, { pct: true });
   };
+  D.platformTotals.forEach(a => cell(el.querySelector(".grid.platform-totals"), a.name, a, czk(a.value)));
   D.portfolios.forEach(a => cell(el.querySelector(".grid.portfolios"), a.name, a, czk(a.value)));
 }
 
-// ---------- fund strip: a tile per Portfolio and per fund above one big chart of the one picked ----------
-function renderFunds(el) {
+// ---------- strip: a tile per Platform total and per Portfolio above one big chart of the one picked ----------
+function renderStrip(el) {
   el.innerHTML = `<div class="strip-page"><div class="strip"></div><div class="detail"></div></div>`;
   const strip = el.querySelector(".strip"), detail = el.querySelector(".detail");
   const standing = (value, hurdle, invested) => D.benchmark ? `${pct(vs(value, hurdle))} vs ${esc(D.benchmark)}` : `${pct(vs(value, invested))} vs invested`;
   const items = [{ key: "", name: "Whole Portfolio", value: P.value, rel: D.benchmark ? vs(P.value, P.benchmarkHurdle) : vs(P.value, P.invested),
     label: standing(P.value, P.benchmarkHurdle, P.invested) }]
-    .concat(D.portfolios.map(a => ({ key: "a" + a.key, a, name: a.name, value: a.value,
-      rel: D.benchmark ? vs(a.value, a.benchmarkHurdle) : vs(a.value, a.invested),
-      label: a.notValued ? "not valued" : standing(a.value, a.benchmarkHurdle, a.invested) })))
-    .concat(D.funds.map(f => ({ key: "f" + f.key, f, name: f.name, value: f.value,
-      rel: null, label: f.notValued ? "not valued" : `${abs(esc(f.units))} units` })));
+    .concat([["p", D.platformTotals], ["a", D.portfolios]].flatMap(([prefix, sections]) => sections.map(a => ({ key: prefix + a.key, a,
+      name: a.name, value: a.value, rel: D.benchmark ? vs(a.value, a.benchmarkHurdle) : vs(a.value, a.invested),
+      label: a.notValued ? "not valued" : standing(a.value, a.benchmarkHurdle, a.invested) }))));
   const height = () => Math.max(500, innerHeight - 300);
   let picked = "";
   const draw = () => {
-    strip.innerHTML = items.map(it => `<div class="item ${it.key === picked ? "sel" : ""}" data-key="${esc(it.key)}"><div class="n">${esc(it.name)}${it.f ? ` <span class="muted">· ${esc(it.f.portfolio)}</span>` : ""}</div>
+    strip.innerHTML = items.map(it => `<div class="item ${it.key === picked ? "sel" : ""}" data-key="${esc(it.key)}"><div class="n">${esc(it.name)}</div>
       <div class="v"><span class="muted">${czk(it.value)}</span><span class="${cls(it.rel)}">${it.label}</span></div></div>`).join("");
     strip.querySelectorAll(".item").forEach(n => n.onclick = () => { picked = n.dataset.key; draw(); });
     const fact = (label, html) => `<div><b>${esc(label)}</b>${html}</div>`;
     if (!picked) {
       detail.innerHTML = `<h1>Whole Portfolio</h1><div class="facts">${fact("Value", czk(P.value))}${fact("Invested", czk(P.invested))}
         ${P.hurdles.map(h => fact(`Hurdle (${h.name})`, czk(h.value))).join("")}</div><div></div>`;
-      // Cash and fund values stacked, so the top edge is the Whole Portfolio value.
+      // Portfolio values stacked, so the top edge is the Whole Portfolio value.
       czkChart(detail.lastElementChild, P.composition, height());
-    } else if (picked.startsWith("a")) {
+    } else {
       const { a } = items.find(it => it.key === picked);
       detail.innerHTML = `<h1>${esc(a.name)}</h1><div class="facts">${fact("Value", czk(a.value))}${fact("Invested", czk(a.invested))}
         ${a.hurdles.map(h => fact(`Hurdle (${h.name})`, czk(h.value))).join("")}</div>${portfolioNotes(a)}<div></div>`;
       czkChart(detail.lastElementChild, a.chart, height());
-    } else {
-      const { f } = items.find(it => it.key === picked);
-      detail.innerHTML = `<h1>${esc(f.name)}</h1><div class="facts">${fact("ISIN", esc(f.isin))}${fact("Portfolio", esc(f.portfolio))}${fact("Priced in", esc(f.pricedIn))}
-        ${fact("Value", czk(f.value) + (f.currencyValue ? ` (${abs(esc(f.currencyValue))})` : ""))}
-        ${fact("Units", abs(esc(f.units)))}</div>${f.notValued ? `<p class="warn">Not valued: ${esc(f.notValued)}</p>` : ""}<div></div>`;
-      // Not valued: the warning says why, and there is nothing to draw.
-      if (f.chart.length) czkChart(detail.lastElementChild, f.chart, height());
     }
   };
   draw();
@@ -257,7 +241,7 @@ privateBtn.onclick = () => {
 labelPrivate();
 
 // ---------- layout switcher: top-bar buttons, ← / →, ?view= ----------
-const VIEWS = { dashboard: renderDashboard, relative: renderRelative, funds: renderFunds };
+const VIEWS = { dashboard: renderDashboard, relative: renderRelative, strip: renderStrip };
 const KEYS = Object.keys(VIEWS), rendered = new Set();
 let current;
 function show(key) {

@@ -745,3 +745,50 @@ def test_one_portfolios_cash_does_not_make_up_for_anothers_negative_cash() -> No
 
     assert t.cash == {"CZK": (Decimal(4000),)}
     assert t.negative_cash == (NegativeCash(JT, "CZK", date(2021, 6, 13), date(2021, 6, 13)),)
+
+
+def test_a_platform_total_adds_up_the_amounts_invested_values_and_hurdles_of_its_portfolios() -> None:
+    bought = purchase(date(2021, 5, 1), "1000", units="100")
+    other = replace(purchase(date(2021, 6, 1), "200", units="20"), portfolio=OTHER_JT)
+    t = valued(
+        [bought, other],
+        deposits=[
+            *paid_for(bought),
+            deposited(date(2021, 6, 1), "300", portfolio=OTHER_JT),
+            deposit(date(2021, 6, 1), "500"),
+        ],
+        prices=[price(date(2021, 5, 1), "10"), price(date(2021, 7, 1), "12")],
+        index_levels=[
+            level(date(2021, 5, 1), "100"),
+            level(date(2021, 6, 1), "110"),
+            level(date(2021, 7, 1), "121"),
+            level(date(2021, 8, 1), "121"),
+        ],
+        today=date(2021, 7, 1),
+    )
+
+    assert list(t.platform_totals) == [Platform.JT, Platform.PORTU]
+    jt_total = t.platform_totals[Platform.JT]
+    assert jt_total.amount_invested[-1] == Decimal(1300)
+    # 120 units at 12 CZK, and 100 CZK of Cash left over in the other J&T Portfolio.
+    assert jt_total.value is not None
+    assert jt_total.value[-1] == Decimal(1540)
+    # 1 000 CZK grown from 1 May, 300 CZK from 1 Jun.
+    assert jt_total.hurdles[CSU_CPI].values[-1] == Decimal(1210) + Decimal(330)
+    # A Platform with one Portfolio totals that Portfolio.
+    assert t.platform_totals[Platform.PORTU] == t.portfolios[PORTU]
+
+
+def test_a_platform_total_has_no_value_only_when_none_of_its_portfolios_has_one() -> None:
+    t = valued(
+        [
+            replace(purchase(date(2021, 6, 13), "40", isin=EUR_FUND), currency="EUR"),
+            replace(buy(date(2021, 6, 13), "0.04", "4"), portfolio=OTHER_JT, currency="CZK"),
+        ],
+        deposits=[deposited(date(2021, 6, 13), "10", portfolio=OTHER_JT)],
+        today=date(2021, 6, 13),
+    )
+
+    # J&T's EUR fund and EUR Cash can't be valued, but the other Portfolio's CZK Cash can.
+    assert t.platform_totals[Platform.JT].value == t.portfolios[OTHER_JT].value == (Decimal(6),)
+    assert t.platform_totals[Platform.JT].cash_not_valued == {"EUR": "no EUR rates stored"}

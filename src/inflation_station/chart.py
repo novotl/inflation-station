@@ -1,9 +1,9 @@
 """Draws a Timeline as one self-contained HTML page (plotly.js and the page's own CSS and JS inlined).
 
 The page has three layouts of the same data, switched in its top bar: a dashboard with a fund table, every value
-relative to inflation, and a strip of funds above one big chart. Python builds every chart's plotly traces and the
-figures shown beside them, as JSON in the page; `chart_page.js` lays them out, colours each trace by its role (`meta`)
-in the light or dark theme, and blurs absolute amounts in private mode.
+relative to inflation, and a strip of Platform totals and Portfolios above one big chart. Python builds every chart's
+plotly traces and the figures shown beside them, as JSON in the page; `chart_page.js` lays them out, colours each trace
+by its role (`meta`) in the light or dark theme, and blurs absolute amounts in private mode.
 """
 
 import json
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from inflation_station.domain import Portfolio
-    from inflation_station.valuation import Hurdle, Timeline
+    from inflation_station.valuation import Hurdle, PortfolioTimeline, Timeline
 
 CHART_NAME = "chart.html"
 HOVER_CZK = "%{y:,.2f} CZK"
@@ -63,12 +63,13 @@ def write_chart(timeline: Timeline, data_dir: Path, *, warnings: Sequence[str] =
 def _page_data(timeline: Timeline, warnings: Sequence[str]) -> dict[str, Any]:
     """Everything the page shows: the figures on the last day, and the traces of every chart.
 
-    Portfolios and Holdings come largest CZK value on the last day first. The benchmark, which the relative charts and
-    the "vs" figures measure against, is ČSÚ CPI, else the only index there is; None before any index is fetched.
+    Platform totals, Portfolios and Holdings come largest CZK value on the last day first. The benchmark, which the
+    relative charts and the "vs" figures measure against, is ČSÚ CPI, else the only index there is; None before any
+    index is fetched.
     """
     benchmark = CSU_CPI if CSU_CPI in timeline.hurdles else next(iter(timeline.hurdles), None)
     hurdle = timeline.hurdles[benchmark] if benchmark else None
-    order = _by_last_value(timeline.units_held, timeline.holding_values)
+    portfolios = _by_last_value_of(timeline.portfolios)
     return {
         "asOf": timeline.dates[-1].isoformat(),
         "warnings": list(warnings),
@@ -80,55 +81,75 @@ def _page_data(timeline: Timeline, warnings: Sequence[str]) -> dict[str, Any]:
             "hurdles": [{"name": NAMES[series], "value": _last(h.values)} for series, h in timeline.hurdles.items()],
             "benchmarkHurdle": _last(hurdle.values) if hurdle else None,
             "chart": _whole_portfolio_chart(timeline),
-            "composition": _composition(timeline, order),
+            "composition": _composition(timeline, portfolios),
             "relative": _relative(timeline.dates, timeline.whole_portfolio_value, timeline.amount_invested, hurdle),
         },
-        "portfolios": [
-            _portfolio_section(timeline, portfolio, benchmark)
-            for portfolio in _by_last_value(
-                timeline.portfolios, {a: t.value for a, t in timeline.portfolios.items() if t.value is not None}
-            )
+        "platformTotals": [
+            _platform_total_section(timeline, platform, benchmark)
+            for platform in _by_last_value_of(timeline.platform_totals)
         ],
-        "funds": [_holding_section(timeline, holding) for holding in order],
+        "portfolios": [_portfolio_section(timeline, portfolio, benchmark) for portfolio in portfolios],
+        "funds": [
+            _holding_section(timeline, holding)
+            for holding in _by_last_value(timeline.units_held, timeline.holding_values)
+        ],
     }
 
 
 def _portfolio_section(timeline: Timeline, portfolio: Portfolio, benchmark: str | None) -> dict[str, Any]:
     """A Portfolio's figures on the last day and its chart, as the Whole Portfolio's."""
-    series = timeline.portfolios[portfolio]
-    hurdle = series.hurdles[benchmark] if benchmark else None
     held = [h for h in timeline.units_held if h.portfolio == portfolio]
+    return _section(timeline, timeline.portfolios[portfolio], held, benchmark) | {
+        "key": _key(portfolio),
+        "name": portfolio_name(portfolio),
+    }
+
+
+def _platform_total_section(timeline: Timeline, platform: Platform, benchmark: str | None) -> dict[str, Any]:
+    """A Platform total's figures on the last day and its chart, as a Portfolio's."""
+    held = [h for h in timeline.units_held if h.portfolio.platform == platform]
+    return _section(timeline, timeline.platform_totals[platform], held, benchmark) | {
+        "key": str(platform),
+        "name": PLATFORM_NAMES[platform],
+    }
+
+
+def _section(
+    timeline: Timeline, series: PortfolioTimeline, held: Sequence[Holding], benchmark: str | None
+) -> dict[str, Any]:
+    """The figures and charts of a Portfolio or Platform total whose Holdings are `held`."""
+    hurdle = series.hurdles[benchmark] if benchmark else None
     # With no value, nothing in it can be valued: each of its funds, and its Cash in every currency.
     missing = (["funds"] if held else []) + (["Cash"] if series.cash_not_valued else [])
     return {
-        "key": _key(portfolio),
-        "name": portfolio_name(portfolio),
         "value": _last(series.value),
         "invested": _last(series.amount_invested),
         "hurdles": [{"name": NAMES[s], "value": _last(h.values)} for s, h in series.hurdles.items()],
         "benchmarkHurdle": _last(hurdle.values) if hurdle else None,
         "notValued": None if series.value is not None else f"none of its {' or '.join(missing)} valued",
-        # What its value leaves out: its funds and its Cash in each currency that can't be valued, saying why.
-        "leftOut": [
-            f"{timeline.fund_names[h.isin]} ({timeline.not_valued[h.isin]})"
-            for h in held
-            if h not in timeline.holding_values
-        ]
+        # What its value leaves out: its funds and its Cash in each currency that can't be valued, saying why. A fund
+        # held in two Portfolios is named once.
+        "leftOut": list(
+            dict.fromkeys(
+                f"{timeline.fund_names[h.isin]} ({timeline.not_valued[h.isin]})"
+                for h in held
+                if h not in timeline.holding_values
+            )
+        )
         + [f"{currency} Cash ({reason})" for currency, reason in series.cash_not_valued.items()],
-        "chart": _portfolio_chart(timeline, portfolio),
+        "chart": _series_chart(timeline.dates, series),
         "relative": _relative(timeline.dates, series.value, series.amount_invested, hurdle),
     }
 
 
 def _holding_section(timeline: Timeline, holding: Holding) -> dict[str, Any]:
-    """A Holding's figures on the last day and its chart. Nothing is invested in a Holding, only in its Portfolio, so
-    it has no amount invested or hurdle (ADR-0002).
+    """A Holding's figures on the last day; no chart, as its Portfolio's has its value. Nothing is invested in a
+    Holding, only in its Portfolio, so it has no amount invested or hurdle (ADR-0002).
     """
     isin = holding.isin
     currency = timeline.fund_currencies.get(isin, CZK)
     currency_value = _last(timeline.holding_currency_values.get(holding))
     return {
-        "key": _key(holding),
         "isin": isin,
         "name": timeline.fund_names[isin],
         "portfolio": portfolio_name(holding.portfolio),
@@ -138,7 +159,6 @@ def _holding_section(timeline: Timeline, holding: Holding) -> dict[str, Any]:
         "currencyValue": None if currency == CZK or currency_value is None else f"{currency_value:,.2f} {currency}",
         "units": _units(timeline.units_held[holding][-1]),
         "notValued": timeline.not_valued.get(isin),
-        "chart": _holding_chart(timeline, holding),
     }
 
 
@@ -155,26 +175,18 @@ def _whole_portfolio_chart(timeline: Timeline) -> list[dict[str, Any]]:
     return traces
 
 
-def _composition(timeline: Timeline, order: Sequence[Holding]) -> list[dict[str, Any]]:
-    """`_whole_portfolio_chart` with its value split: Cash at the bottom, then each valued Holding's value, largest on
-    top.
-
-    Each is named by its fund, and by its Portfolio too when the fund is held in more than one.
-    """
-    held_in = [h.isin for h in order]
-    traces = []
-    if timeline.cash_value is not None:
-        traces.append(_line(timeline.dates, timeline.cash_value, "Cash", stackgroup="value", line={"width": 0}))
-    traces += [
-        _holding_value(
-            timeline,
-            h,
-            timeline.fund_names[h.isin] + (f" ({portfolio_name(h.portfolio)})" if held_in.count(h.isin) > 1 else ""),
+def _composition(timeline: Timeline, portfolios: Sequence[Portfolio]) -> list[dict[str, Any]]:
+    """`_whole_portfolio_chart` with its value split into each valued Portfolio's value, largest on top."""
+    traces = [
+        _line(
+            timeline.dates,
+            series.value,
+            portfolio_name(portfolio),
             stackgroup="value",
             line={"width": 0},
         )
-        for h in reversed(order)
-        if h in timeline.holding_values
+        for portfolio in reversed(portfolios)
+        if (series := timeline.portfolios[portfolio]).value is not None
     ]
     traces.append(_invested(timeline.dates, timeline.amount_invested, width=2))
     for series, hurdle in timeline.hurdles.items():
@@ -182,23 +194,17 @@ def _composition(timeline: Timeline, order: Sequence[Holding]) -> list[dict[str,
     return traces
 
 
-def _portfolio_chart(timeline: Timeline, portfolio: Portfolio) -> list[dict[str, Any]]:
-    """The Portfolio's value, amount invested and inflation hurdles, in CZK, as `_whole_portfolio_chart`."""
-    series = timeline.portfolios[portfolio]
+def _series_chart(dates: Sequence[date], series: PortfolioTimeline) -> list[dict[str, Any]]:
+    """A Portfolio's or Platform total's value, amount invested and inflation hurdles, in CZK, as
+    `_whole_portfolio_chart`.
+    """
     traces = []
     if series.value is not None:
-        traces.append(_line(timeline.dates, series.value, "Value", VALUE, line={"width": 3}))
-    traces.append(_invested(timeline.dates, series.amount_invested))
+        traces.append(_line(dates, series.value, "Value", VALUE, line={"width": 3}))
+    traces.append(_invested(dates, series.amount_invested))
     for index_series, hurdle in series.hurdles.items():
-        traces += _hurdle(timeline.dates, hurdle, index_series)
+        traces += _hurdle(dates, hurdle, index_series)
     return traces
-
-
-def _holding_chart(timeline: Timeline, holding: Holding) -> list[dict[str, Any]]:
-    """The Holding's value in CZK; none when it can't be valued."""
-    if holding not in timeline.holding_values:
-        return []
-    return [_holding_value(timeline, holding, "Value", meta=VALUE, line={"width": 3})]
 
 
 def _relative(
@@ -231,6 +237,11 @@ def _by_last_value[K](every: Iterable[K], values: Mapping[K, Sequence[Decimal | 
     return sorted(every, key=key)
 
 
+def _by_last_value_of[K](series: Mapping[K, PortfolioTimeline]) -> list[K]:
+    """`_by_last_value` of each Portfolio's or Platform total's value."""
+    return _by_last_value(series, {k: t.value for k, t in series.items() if t.value is not None})
+
+
 def _line(
     dates: Sequence[date], values: Sequence[Decimal | None], name: str, meta: str | None = None, **extra: object
 ) -> dict[str, Any]:
@@ -250,27 +261,6 @@ def _line(
 def _invested(dates: Sequence[date], invested: Sequence[Decimal], width: float = 1.5) -> dict[str, Any]:
     """A step line: the amount invested changes only on Deposit dates."""
     return _line(dates, invested, "Amount invested", INVESTED, line={"shape": "hv", "width": width})
-
-
-def _holding_value(
-    timeline: Timeline, holding: Holding, name: str, meta: str | None = None, **extra: object
-) -> dict[str, Any]:
-    """A Holding's CZK value, hovering with its value in the fund's own currency (unless that is CZK) and its units."""
-    customdata = [
-        [None if value is None else float(value), _units(units)]
-        for value, units in zip(timeline.holding_currency_values[holding], timeline.units_held[holding], strict=True)
-    ]
-    currency = timeline.fund_currencies[holding.isin]
-    in_currency = "" if currency == CZK else f" (%{{customdata[0]:,.2f}} {currency})"
-    return _line(
-        timeline.dates,
-        timeline.holding_values[holding],
-        name,
-        meta,
-        customdata=customdata,
-        hovertemplate=f"{HOVER_CZK}{in_currency} · %{{customdata[1]}} units",
-        **extra,
-    )
 
 
 def _hurdle(dates: Sequence[date], hurdle: Hurdle, series: str, width: float = 1.5) -> list[dict[str, Any]]:
@@ -303,10 +293,9 @@ def portfolio_name(portfolio: Portfolio) -> str:
     return f"{PLATFORM_NAMES[portfolio.platform]} · {portfolio.name}"
 
 
-def _key(of: Portfolio | Holding) -> str:
-    """A key the page picks a Portfolio or Holding by: unique, as its parts never contain a newline."""
-    portfolio = of.portfolio if isinstance(of, Holding) else of
-    return "\n".join([portfolio.platform, portfolio.key, *([of.isin] if isinstance(of, Holding) else [])])
+def _key(portfolio: Portfolio) -> str:
+    """A key the page picks a Portfolio by: unique, as its parts never contain a newline."""
+    return f"{portfolio.platform}\n{portfolio.key}"
 
 
 def _ratio(values: Sequence[Decimal | None], bases: Sequence[Decimal | None]) -> list[Decimal | None]:

@@ -16,7 +16,7 @@ from inflation_station.currency import CZK
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
-    from inflation_station.domain import Fund, Portfolio, Purchase, Rows, Sale
+    from inflation_station.domain import Fund, Platform, Portfolio, Purchase, Rows, Sale
     from inflation_station.fund_price import FundPrice
     from inflation_station.fx_rate import FxRate
     from inflation_station.price_index import IndexLevel
@@ -67,7 +67,10 @@ class NegativeCash(NamedTuple):
 
 @dataclass(frozen=True)
 class PortfolioTimeline:
-    """One Portfolio's series, lined up with the Timeline's `dates`."""
+    """One Portfolio's series, or one Platform total's, lined up with the Timeline's `dates`.
+
+    A Platform total's series are its Portfolios' added together.
+    """
 
     # The CZK of its Deposits dated on or before each day.
     amount_invested: tuple[Decimal, ...]
@@ -92,6 +95,8 @@ class Timeline:
     amount_invested: tuple[Decimal, ...]
     # Every Portfolio with imported rows, by Portfolio.
     portfolios: Mapping[Portfolio, PortfolioTimeline]
+    # The Platform total of every Platform with imported rows, by Platform.
+    platform_totals: Mapping[Platform, PortfolioTimeline]
     # The latest fund name by ISIN, for every fund purchased or held.
     fund_names: Mapping[str, str]
     # Units held by Holding, for every fund bought or sold in each Portfolio: its Purchases' units less its Sales', on
@@ -222,6 +227,7 @@ def timeline(
         dates=dates,
         amount_invested=_running_total(dates, every_investment),
         portfolios=portfolios,
+        platform_totals=_platform_totals(dates, invested_in, portfolios, levels_by_series),
         fund_names={isin: fund.name for isin, fund in funds.items()},
         units_held=units_held,
         holding_values=holding_values,
@@ -237,6 +243,28 @@ def timeline(
         cash_not_valued=cash_not_valued,
         negative_cash=tuple(negative_cash),
     )
+
+
+def _platform_totals(
+    dates: Sequence[date],
+    invested_in: Mapping[Portfolio, Sequence[tuple[date, Decimal]]],
+    portfolios: Mapping[Portfolio, PortfolioTimeline],
+    levels_by_series: Mapping[str, Sequence[IndexLevel]],
+) -> dict[Platform, PortfolioTimeline]:
+    """Each Platform's Portfolios added together. `invested_in` is each Portfolio's Deposits' (date, CZK)."""
+    totals = {}
+    for platform in dict.fromkeys(a.platform for a in portfolios):
+        on_it = [a for a in portfolios if a.platform == platform]
+        invested = [i for a in on_it for i in invested_in[a]]
+        # A Portfolio has no value only when nothing in it can be valued, so it adds nothing.
+        values = [v for a in on_it if (v := portfolios[a].value) is not None]
+        totals[platform] = PortfolioTimeline(
+            amount_invested=_running_total(dates, invested),
+            value=_sum(values) if values else None,
+            hurdles=_hurdles(dates, invested, levels_by_series),
+            cash_not_valued={c: why for a in on_it for c, why in portfolios[a].cash_not_valued.items()},
+        )
+    return totals
 
 
 def _portfolio_order(portfolio: Portfolio) -> tuple[str, str]:

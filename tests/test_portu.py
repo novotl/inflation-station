@@ -298,7 +298,7 @@ def test_fetch_fx_fetches_the_currencies_cash_is_held_in(tmp_path: Path) -> None
     assert run("--data-dir", tmp_path, "fetch-fx") == (0, "EUR: 44 rates added, 0 already present.\n", "")
 
 
-def test_the_chart_values_cash_and_stacks_it_under_the_funds(tmp_path: Path) -> None:
+def test_the_chart_values_the_portfolio_at_its_cash_and_its_funds(tmp_path: Path) -> None:
     # Half an SXR7 at 3 May's close, paid from the 100 EUR.
     export = write(
         tmp_path / "eur_and_sxr7.csv",
@@ -318,12 +318,10 @@ def test_the_chart_values_cash_and_stacks_it_under_the_funds(tmp_path: Path) -> 
     assert page(tmp_path)["wholePortfolio"]["value"] == pytest.approx(cash + sxr7)
     stacked = page(tmp_path)["wholePortfolio"]["composition"]
     assert [(t["name"], t.get("stackgroup")) for t in stacked] == [
-        ("Cash", "value"),
-        ("SXR7 GY", "value"),
+        (f"Portu · {PORTFOLIO}", "value"),
         ("Amount invested", None),
     ]
-    assert stacked[0]["y"][-1] == pytest.approx(cash)
-    assert stacked[1]["y"][-1] == pytest.approx(sxr7)
+    assert stacked[0]["y"][-1] == pytest.approx(cash + sxr7)
 
 
 def test_fetch_fx_with_only_czk_cash_fetches_nothing(tmp_path: Path, recorded: dict[str, Path]) -> None:
