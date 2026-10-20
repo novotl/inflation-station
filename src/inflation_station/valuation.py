@@ -315,8 +315,8 @@ def _hurdles(
 
 
 def _hurdle(dates: Sequence[date], invested: Sequence[tuple[date, Decimal]], levels: Sequence[IndexLevel]) -> Hurdle:
-    """`invested` is each Deposit's (date, CZK). `levels` must not be empty, and must be one
-    series' levels for consecutive months.
+    """`invested` is each Deposit's (date, CZK). `levels` must not be empty, and must be one series' levels for
+    consecutive months.
     """
     index = dict(zip(dates, _daily_index(dates, levels), strict=True))
     values: list[Decimal | None] = []

@@ -737,3 +737,11 @@ def test_each_stretch_of_negative_cash_is_warned_about_on_its_own() -> None:
         NegativeCash(PORTU, "EUR", date(2021, 6, 13), date(2021, 6, 13)),
         NegativeCash(PORTU, "EUR", date(2021, 6, 16), date(2021, 6, 17)),
     )
+
+
+def test_one_portfolios_cash_does_not_make_up_for_anothers_negative_cash() -> None:
+    bought = purchase(date(2021, 6, 13), "1000")
+    t = valued([bought], deposits=[deposit(date(2021, 6, 13), "5000")], today=date(2021, 6, 13))
+
+    assert t.cash == {"CZK": (Decimal(4000),)}
+    assert t.negative_cash == (NegativeCash(JT, "CZK", date(2021, 6, 13), date(2021, 6, 13)),)

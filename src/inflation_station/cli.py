@@ -198,7 +198,7 @@ def _report_negative_cash(t: Timeline) -> None:
     """Name the days each Portfolio's Cash in a currency was negative, on stderr: a warning, not a failure."""
     by_cash: dict[tuple[str, str], list[str]] = {}
     for n in t.negative_cash:
-        days = n.first_day.isoformat() + ("" if n.last_day == n.first_day else f" to {n.last_day}")
+        days = f"{n.first_day}" + ("" if n.last_day == n.first_day else f" to {n.last_day}")
         by_cash.setdefault((portfolio_name(n.portfolio), n.currency), []).append(days)
     for (portfolio, currency), days in by_cash.items():
         click.echo(f"Negative Cash ({currency}): {portfolio} on {', '.join(days)}", err=True)

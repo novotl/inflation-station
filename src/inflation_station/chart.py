@@ -247,11 +247,9 @@ def _line(
     return trace | extra
 
 
-def _invested(
-    dates: Sequence[date], invested: Sequence[Decimal], width: float = 1.5, **extra: object
-) -> dict[str, Any]:
+def _invested(dates: Sequence[date], invested: Sequence[Decimal], width: float = 1.5) -> dict[str, Any]:
     """A step line: the amount invested changes only on Deposit dates."""
-    return _line(dates, invested, "Amount invested", INVESTED, line={"shape": "hv", "width": width}, **extra)
+    return _line(dates, invested, "Amount invested", INVESTED, line={"shape": "hv", "width": width})
 
 
 def _holding_value(
