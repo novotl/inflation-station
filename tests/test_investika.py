@@ -52,7 +52,7 @@ def statement(fixture: str) -> investika.Statement:
 
 
 def rows(*fixtures: str | investika.Statement) -> Rows:
-    """Purchases and Fees from fixture files, or from statements a test has changed."""
+    """Rows from fixture files, or from statements a test has changed."""
     return investika.rows([statement(f) if isinstance(f, str) else f for f in fixtures])
 
 

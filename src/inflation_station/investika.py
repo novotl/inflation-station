@@ -113,7 +113,7 @@ def rows(statements: Iterable[Statement]) -> Rows:
     purchases: list[Purchase] = []
     fees: list[Fee] = []
     for cash, holdings in _pairs(statements):
-        cash_rows = _Cash(cash, _contract(cash.portfolio))
+        cash_rows = _Cash(cash, _contract_portfolio(cash.portfolio))
         deposits += cash_rows.deposits
         row_ids: set[str] = set()
         for cells, next_cells in _holdings_rows(holdings):
@@ -129,8 +129,8 @@ def rows(statements: Iterable[Statement]) -> Rows:
     return Rows(deposits=deposits, purchases=purchases, fees=fees)
 
 
-def _contract(number: str) -> Portfolio:
-    """A Portfolio per contract, named by its number."""
+def _contract_portfolio(number: str) -> Portfolio:
+    """The Portfolio a contract becomes: one per contract, named by its number."""
     return Portfolio(Platform.INVESTIKA, key=number, name=number)
 
 
@@ -248,7 +248,7 @@ def _holdings_rows(holdings: Statement) -> list[tuple[list[str], list[str]]]:
     ]
 
 
-def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments: _Cash) -> tuple[Purchase, Decimal]:
+def _purchase(portfolio: str, cells: list[str], next_cells: list[str], cash: _Cash) -> tuple[Purchase, Decimal]:
     """The Purchase in a holdings row and the CZK of its Fee, claiming the payment it was bought with."""
     if cells[2] != ISSUE:
         msg = "unknown transaction type"
@@ -273,7 +273,7 @@ def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments:
         msg = f"Cena / kus is in {unit_price_currency!r}, expected {CZK!r} like Částka"
         raise RowError(msg)
 
-    paid, paid_as_written = payments.claim(_date(ordered, "Datum pokynu"))
+    paid, paid_as_written = cash.claim(_date(ordered, "Datum pokynu"))
     net_amount = _decimal(net, "Částka")
     if paid < net_amount:
         msg = f"payment {paid_as_written} is less than the issue's Částka {net}"
@@ -285,7 +285,7 @@ def _purchase(portfolio: str, cells: list[str], next_cells: list[str], payments:
         msg = f"Datum vypořádání {settled!r} {settled_time!r} is not a date and time like '31.12.2026' '23:59:59'"
         raise RowError(msg) from e
     purchase = Purchase(
-        portfolio=_contract(portfolio),
+        portfolio=_contract_portfolio(portfolio),
         fund=Fund(isin, " ".join([name_start, *name_end])),
         source_row_id=settled_at.isoformat(),
         # The month-end price the units were issued at; see docs/adr/0001-investika-trade-date-is-the-price-date.md.
