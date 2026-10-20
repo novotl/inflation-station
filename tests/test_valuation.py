@@ -18,7 +18,7 @@ from inflation_station.domain import (
 from inflation_station.fund_price import FundPrice
 from inflation_station.fx_rate import FxRate
 from inflation_station.price_index import CSU_CPI, IndexLevel
-from inflation_station.valuation import NO_PRICES, Holding, timeline
+from inflation_station.valuation import NO_PRICES, Holding, NegativeCash, timeline
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -52,6 +52,16 @@ def purchase(trade_date: date, czk: str, isin: str = CZK_FUND, units: str = "1")
     )
 
 
+def deposited(day: date, czk: str, portfolio: Portfolio = JT) -> Deposit:
+    """A CZK Deposit into a J&T Portfolio."""
+    return Deposit(portfolio, f"deposit {day} {czk}", day, Decimal(czk), "CZK")
+
+
+def paid_for(*purchases: Purchase) -> list[Deposit]:
+    """A Deposit of each CZK Purchase's amount on its day, so its Portfolio has no Cash left over."""
+    return [Deposit(p.portfolio, f"deposit for {p.source_row_id}", p.day, p.amount, p.currency) for p in purchases]
+
+
 def valued(  # noqa: PLR0913 - every input but the Purchases is keyword-only
     purchases: Sequence[Purchase] = (),
     *,
@@ -69,18 +79,18 @@ def valued(  # noqa: PLR0913 - every input but the Purchases is keyword-only
     return timeline(rows, prices=prices, rates=rates, index_levels=index_levels, today=today)
 
 
-def test_timeline_has_every_day_from_the_first_trade_date_to_today() -> None:
+def test_timeline_has_every_day_from_the_first_row_to_today() -> None:
     t = valued([purchase(date(2021, 6, 15), "100"), purchase(date(2021, 6, 13), "100")], today=date(2021, 6, 17))
 
     assert t.dates == (date(2021, 6, 13), date(2021, 6, 14), date(2021, 6, 15), date(2021, 6, 16), date(2021, 6, 17))
 
 
-def test_amount_invested_steps_up_on_each_trade_date_by_the_czk_amount() -> None:
+def test_amount_invested_steps_up_on_each_deposit_date_by_its_czk_amount() -> None:
     t = valued(
-        [
-            purchase(date(2021, 6, 13), "8000.00"),
-            purchase(date(2021, 6, 15), "5000.00"),
-            purchase(date(2021, 6, 15), "1234.56", isin=EUR_FUND),
+        deposits=[
+            deposited(date(2021, 6, 13), "8000.00"),
+            deposited(date(2021, 6, 15), "5000.00"),
+            deposited(date(2021, 6, 15), "1234.56", portfolio=OTHER_JT),
         ],
         today=date(2021, 6, 17),
     )
@@ -131,19 +141,18 @@ def test_a_fund_is_worth_nothing_before_its_first_purchase() -> None:
 
 
 def test_a_holding_with_no_price_yet_has_no_value() -> None:
-    t = valued(
-        [purchase(date(2021, 6, 13), "1000")],
-        prices=[price(date(2021, 6, 14), "10")],
-        today=date(2021, 6, 14),
-    )
+    bought = purchase(date(2021, 6, 13), "1000")
+    t = valued([bought], deposits=paid_for(bought), prices=[price(date(2021, 6, 14), "10")], today=date(2021, 6, 14))
 
     assert t.holding_values[jt(CZK_FUND)] == (None, Decimal(10))
     assert t.whole_portfolio_value == (None, Decimal(10))
 
 
 def test_whole_portfolio_value_is_the_sum_of_the_fund_values() -> None:
+    bought = [purchase(date(2021, 6, 13), "1000", units="2"), purchase(date(2021, 6, 14), "1000", isin=OTHER_CZK_FUND)]
     t = valued(
-        [purchase(date(2021, 6, 13), "1000", units="2"), purchase(date(2021, 6, 14), "1000", isin=OTHER_CZK_FUND)],
+        bought,
+        deposits=paid_for(*bought),
         prices=[price(date(2021, 6, 13), "10"), price(date(2021, 6, 13), "1.5", isin=OTHER_CZK_FUND)],
         today=date(2021, 6, 14),
     )
@@ -185,8 +194,10 @@ def test_a_rate_quoted_per_100_units_values_each_unit_at_a_hundredth() -> None:
 
 
 def test_whole_portfolio_value_counts_eur_funds_in_czk() -> None:
+    bought = [purchase(date(2021, 6, 13), "1000"), purchase(date(2021, 6, 13), "1000", isin=EUR_FUND)]
     t = valued(
-        [purchase(date(2021, 6, 13), "1000"), purchase(date(2021, 6, 13), "1000", isin=EUR_FUND)],
+        bought,
+        deposits=paid_for(*bought),
         prices=[price(date(2021, 6, 13), "10"), price(date(2021, 6, 13), "40", isin=EUR_FUND, currency="EUR")],
         rates=[rate(date(2021, 6, 11), "25.5")],
         today=date(2021, 6, 13),
@@ -207,8 +218,10 @@ def test_a_holding_with_no_rate_yet_has_no_value() -> None:
 
 
 def test_funds_priced_in_a_currency_without_rates_are_not_valued() -> None:
+    bought = [purchase(date(2021, 6, 13), "1000"), purchase(date(2021, 6, 13), "1000", isin=EUR_FUND)]
     t = valued(
-        [purchase(date(2021, 6, 13), "1000"), purchase(date(2021, 6, 13), "1000", isin=EUR_FUND)],
+        bought,
+        deposits=paid_for(*bought),
         prices=[price(date(2021, 6, 13), "10"), price(date(2021, 6, 13), "40", isin=EUR_FUND, currency="EUR")],
         rates=[rate(date(2021, 6, 13), "0.04", currency="USD")],
         today=date(2021, 6, 13),
@@ -238,7 +251,8 @@ def test_funds_without_prices_are_not_valued() -> None:
     t = valued([purchase(date(2021, 6, 13), "1000")], today=date(2021, 6, 13))
 
     assert t.holding_values == {}
-    assert t.whole_portfolio_value is None
+    # Only the Cash paid for it is valued.
+    assert t.whole_portfolio_value == (Decimal(-1000),)
     assert t.not_valued == {CZK_FUND: "no prices stored"}
 
 
@@ -254,7 +268,7 @@ def level(month: date, value: str) -> IndexLevel:
 
 def test_index_levels_are_interpolated_geometrically_within_a_month() -> None:
     t = valued(
-        [purchase(date(2021, 6, 1), "1000")],
+        deposits=[deposited(date(2021, 6, 1), "1000")],
         index_levels=[level(date(2021, 6, 1), "100"), level(date(2021, 7, 1), "121"), level(date(2021, 8, 1), "121")],
         today=date(2021, 7, 1),
     )
@@ -265,20 +279,20 @@ def test_index_levels_are_interpolated_geometrically_within_a_month() -> None:
     assert (hurdle[0], hurdle[-1]) == (Decimal(1000), Decimal(1210))
 
 
-def test_the_hurdle_grows_a_purchase_from_its_trade_date() -> None:
+def test_the_hurdle_grows_a_deposit_from_its_date() -> None:
     t = valued(
-        [purchase(date(2021, 6, 16), "1100")],
+        deposits=[deposited(date(2021, 6, 16), "1100")],
         index_levels=[level(date(2021, 6, 1), "100"), level(date(2021, 7, 1), "121"), level(date(2021, 8, 1), "121")],
         today=date(2021, 7, 1),
     )
 
-    # Bought when the index was 110, so on 1 Jul, at 121, it needs to be worth 1100 x 121 / 110.
+    # Deposited when the index was 110, so on 1 Jul, at 121, it needs to be worth 1100 x 121 / 110.
     assert t.hurdles[CSU_CPI].values[-1] == Decimal(1210)
 
 
-def test_the_hurdle_sums_every_purchase_traded_on_or_before_the_day() -> None:
+def test_the_hurdle_sums_every_deposit_on_or_before_the_day() -> None:
     t = valued(
-        [purchase(date(2021, 5, 1), "1000"), purchase(date(2021, 6, 1), "500", isin=OTHER_CZK_FUND)],
+        deposits=[deposited(date(2021, 5, 1), "1000"), deposited(date(2021, 6, 1), "500", portfolio=OTHER_JT)],
         index_levels=[
             level(date(2021, 5, 1), "100"),
             level(date(2021, 6, 1), "110"),
@@ -289,14 +303,14 @@ def test_the_hurdle_sums_every_purchase_traded_on_or_before_the_day() -> None:
     )
 
     hurdle = t.hurdles[CSU_CPI].values
-    assert hurdle[0] == Decimal(1000)  # the second Purchase isn't counted yet
+    assert hurdle[0] == Decimal(1000)  # the second Deposit isn't counted yet
     assert hurdle[t.dates.index(date(2021, 6, 1))] == Decimal(1100) + Decimal(500)
     assert hurdle[-1] == Decimal(1210) + Decimal(550)
 
 
 def test_months_after_the_last_published_one_carry_its_month_on_month_change_forward() -> None:
     t = valued(
-        [purchase(date(2021, 5, 1), "1000")],
+        deposits=[deposited(date(2021, 5, 1), "1000")],
         index_levels=[level(date(2021, 5, 1), "100"), level(date(2021, 6, 1), "110")],
         today=date(2021, 8, 1),
     )
@@ -309,7 +323,7 @@ def test_months_after_the_last_published_one_carry_its_month_on_month_change_for
 
 def test_the_estimate_starts_the_day_after_the_last_published_month_starts() -> None:
     t = valued(
-        [purchase(date(2021, 5, 1), "1000")],
+        deposits=[deposited(date(2021, 5, 1), "1000")],
         index_levels=[level(date(2021, 5, 1), "100"), level(date(2021, 6, 1), "110")],
         today=date(2021, 8, 1),
     )
@@ -320,12 +334,12 @@ def test_the_estimate_starts_the_day_after_the_last_published_month_starts() -> 
 
 def test_the_hurdle_is_unknown_before_the_first_index_level() -> None:
     t = valued(
-        [purchase(date(2021, 5, 31), "1000")],
+        deposits=[deposited(date(2021, 5, 31), "1000")],
         index_levels=[level(date(2021, 6, 1), "100"), level(date(2021, 7, 1), "110")],
         today=date(2021, 6, 1),
     )
 
-    # Every day counts the 31 May Purchase, whose index is unknown.
+    # Every day counts the 31 May Deposit, whose index is unknown.
     assert t.hurdles[CSU_CPI].values == (None, None)
 
 
@@ -376,47 +390,6 @@ def test_funds_not_valued_have_no_fund_currency_value() -> None:
     assert t.fund_currencies == {}
 
 
-def test_amount_invested_by_fund_counts_only_that_funds_purchases() -> None:
-    t = valued(
-        [
-            purchase(date(2021, 6, 13), "8000.00"),
-            purchase(date(2021, 6, 14), "1234.56", isin=EUR_FUND),
-            purchase(date(2021, 6, 15), "5000.00"),
-        ],
-        today=date(2021, 6, 15),
-    )
-
-    assert t.holding_amount_invested == {
-        jt(CZK_FUND): (Decimal("8000.00"), Decimal("8000.00"), Decimal("13000.00")),
-        jt(EUR_FUND): (Decimal(0), Decimal("1234.56"), Decimal("1234.56")),
-    }
-
-
-def test_the_hurdle_by_fund_grows_only_that_funds_purchases() -> None:
-    t = valued(
-        [purchase(date(2021, 5, 1), "1000"), purchase(date(2021, 6, 1), "500", isin=OTHER_CZK_FUND)],
-        index_levels=[
-            level(date(2021, 5, 1), "100"),
-            level(date(2021, 6, 1), "110"),
-            level(date(2021, 7, 1), "121"),
-            level(date(2021, 8, 1), "121"),
-        ],
-        today=date(2021, 7, 1),
-    )
-
-    czk_fund, other_fund = t.holding_hurdles[jt(CZK_FUND)][CSU_CPI], t.holding_hurdles[jt(OTHER_CZK_FUND)][CSU_CPI]
-    assert (czk_fund.values[0], czk_fund.values[-1]) == (Decimal(1000), Decimal(1210))
-    # Nothing is invested in the other fund before 1 Jun, so it has nothing to keep up with.
-    assert (other_fund.values[0], other_fund.values[-1]) == (Decimal(0), Decimal(550))
-    assert czk_fund.estimated_from == other_fund.estimated_from == t.hurdles[CSU_CPI].estimated_from
-
-
-def test_there_are_no_hurdles_by_fund_without_index_levels() -> None:
-    t = valued([purchase(date(2021, 6, 13), "1000")], today=date(2021, 6, 13))
-
-    assert t.holding_hurdles == {jt(CZK_FUND): {}}
-
-
 def test_funds_without_prices_are_priced_in_the_currency_of_their_latest_purchase() -> None:
     t = valued(
         [
@@ -455,6 +428,11 @@ def deposit(day: date, amount: str, currency: str = "CZK") -> Deposit:
     return Deposit(PORTU, f"deposit {day} {amount}", day, Decimal(amount), currency)
 
 
+def fee(on: Purchase, day: date, czk: str) -> Fee:
+    """A Fee charged on `day` on a J&T Purchase."""
+    return Fee(on.portfolio, on.source_row_id, day, Decimal(czk), "CZK")
+
+
 def portu_fee(day: date, amount: str) -> Fee:
     return Fee(PORTU, f"fee {day} {amount}", day, Decimal(amount), "CZK")
 
@@ -480,41 +458,7 @@ def sell(day: date, units: str, amount: str) -> Sale:
     )
 
 
-def test_deposits_count_as_invested_alongside_purchases_and_fees_and_buys_do_not() -> None:
-    t = valued(
-        [purchase(date(2021, 6, 14), "1000"), buy(date(2021, 6, 14), "0.04", "4")],
-        deposits=[deposit(date(2021, 6, 13), "500")],
-        fees=[portu_fee(date(2021, 6, 15), "10")],
-        today=date(2021, 6, 15),
-    )
-
-    assert t.dates[0] == date(2021, 6, 13)
-    assert t.amount_invested == (Decimal(500), Decimal(1500), Decimal(1500))
-
-
-def test_the_hurdle_grows_each_deposit_from_its_date() -> None:
-    t = valued(
-        [purchase(date(2021, 5, 1), "1000")],
-        deposits=[deposit(date(2021, 6, 1), "500")],
-        index_levels=[
-            level(date(2021, 5, 1), "100"),
-            level(date(2021, 6, 1), "110"),
-            level(date(2021, 7, 1), "121"),
-            level(date(2021, 8, 1), "121"),
-        ],
-        today=date(2021, 7, 1),
-    )
-
-    hurdle = t.hurdles[CSU_CPI].values
-    deposited = t.dates.index(date(2021, 6, 1))
-    # Before 1 Jun only the Purchase counts, so the hurdle is the fund's own.
-    assert hurdle[:deposited] == t.holding_hurdles[jt(CZK_FUND)][CSU_CPI].values[:deposited]
-    assert hurdle[-1] == Decimal(1210) + Decimal(550)
-    # The fund's own hurdle grows only its Purchase.
-    assert t.holding_hurdles[jt(CZK_FUND)][CSU_CPI].values[-1] == Decimal(1210)
-
-
-def test_funds_held_in_a_managed_portfolio_have_units_but_nothing_invested_in_them() -> None:
+def test_holdings_have_units_but_nothing_invested_in_them() -> None:
     t = valued(
         [buy(date(2021, 6, 13), "0.04", "4")],
         deposits=[deposit(date(2021, 6, 13), "500")],
@@ -523,29 +467,24 @@ def test_funds_held_in_a_managed_portfolio_have_units_but_nothing_invested_in_th
     )
 
     assert t.units_held == {Holding(PORTU, Fund(ETF, f"ETF {ETF}")): (Decimal("0.04"), Decimal("0.03"))}
-    # A Holding in a Managed Portfolio has nothing invested in it (ADR-0002).
-    assert t.holding_amount_invested == t.holding_hurdles == {}
     assert t.fund_names == {ETF: f"ETF {ETF}"}
     assert t.priced_in == {ETF: "EUR"}
     assert t.not_valued == {ETF: NO_PRICES}
 
 
-def test_cash_is_what_came_in_less_what_went_out_by_currency() -> None:
+def test_cash_is_deposits_less_purchases_less_fees_plus_sales_plus_or_minus_conversions_by_currency() -> None:
     t = valued(
-        [purchase(date(2021, 6, 12), "1000"), buy(date(2021, 6, 14), "0.16", "16")],
+        [buy(date(2021, 6, 14), "0.16", "16")],
         deposits=[deposit(date(2021, 6, 13), "500")],
-        conversions=[
-            conversion(date(2021, 6, 13), "400", "CZK", "16", "EUR"),
-            conversion(date(2021, 6, 14), "1", "EUR", "25", "CZK"),
-            conversion(date(2021, 6, 15), "25", "CZK", "1", "EUR"),
-        ],
+        sales=[sell(date(2021, 6, 15), "0.01", "1")],
+        fees=[portu_fee(date(2021, 6, 15), "10")],
+        conversions=[conversion(date(2021, 6, 13), "400", "CZK", "16", "EUR")],
         today=date(2021, 6, 15),
     )
 
-    # Only the Portfolio with Deposits has Cash.
     assert t.cash == {
-        "CZK": (Decimal(0), Decimal(100), Decimal(125), Decimal(100)),
-        "EUR": (Decimal(0), Decimal(16), Decimal(-1), Decimal(0)),
+        "CZK": (Decimal(100), Decimal(100), Decimal(90)),
+        "EUR": (Decimal(16), Decimal(0), Decimal(1)),
     }
 
 
@@ -564,18 +503,15 @@ def test_the_same_fund_in_two_portfolios_is_two_holdings_priced_once() -> None:
         jt(CZK_FUND): (Decimal(20), Decimal(20)),
         jt(CZK_FUND, OTHER_JT): (Decimal(0), Decimal(30)),
     }
-    assert t.holding_amount_invested == {
-        jt(CZK_FUND): (Decimal(1000), Decimal(1000)),
-        jt(CZK_FUND, OTHER_JT): (Decimal(0), Decimal(300)),
-    }
     assert t.priced_in == {CZK_FUND: "CZK"}
 
 
-def test_each_portfolio_has_the_amount_invested_and_hurdles_of_its_own_purchases_or_deposits() -> None:
+def test_each_portfolio_has_the_amount_invested_and_hurdles_of_its_own_deposits() -> None:
+    bought = purchase(date(2021, 5, 1), "1000")
     t = valued(
-        [purchase(date(2021, 5, 1), "1000")],
-        deposits=[deposit(date(2021, 6, 1), "500")],
-        fees=[portu_fee(date(2021, 6, 2), "10")],
+        [bought],
+        deposits=[deposited(date(2021, 5, 1), "1030"), deposit(date(2021, 6, 1), "500")],
+        fees=[fee(bought, bought.day, "30"), portu_fee(date(2021, 6, 2), "10")],
         index_levels=[
             level(date(2021, 5, 1), "100"),
             level(date(2021, 6, 1), "110"),
@@ -587,17 +523,19 @@ def test_each_portfolio_has_the_amount_invested_and_hurdles_of_its_own_purchases
 
     jt_portfolio, portu = t.portfolios[JT], t.portfolios[PORTU]
     assert list(t.portfolios) == [JT, PORTU]
-    assert (jt_portfolio.managed, portu.managed) == (False, True)
-    assert (jt_portfolio.amount_invested[-1], portu.amount_invested[-1]) == (Decimal(1000), Decimal(500))
+    assert (jt_portfolio.amount_invested[-1], portu.amount_invested[-1]) == (Decimal(1030), Decimal(500))
     assert portu.amount_invested[0] == Decimal(0)
-    assert jt_portfolio.hurdles[CSU_CPI].values[-1] == Decimal(1210)
+    # Each Deposit grows from its own date; the Fees count in neither.
+    assert jt_portfolio.hurdles[CSU_CPI].values[-1] == Decimal("1246.3")
     assert portu.hurdles[CSU_CPI].values[-1] == Decimal(550)
+    assert t.hurdles[CSU_CPI].values[-1] == Decimal("1246.3") + Decimal(550)
 
 
 def test_a_portfolios_value_is_its_holdings_and_its_cash_in_czk_negative_or_not() -> None:
+    bought = purchase(date(2021, 6, 13), "1000", units="2")
     t = valued(
-        [purchase(date(2021, 6, 13), "1000", units="2"), buy(date(2021, 6, 14), "0.16", "16")],
-        deposits=[deposit(date(2021, 6, 13), "500")],
+        [bought, buy(date(2021, 6, 14), "0.16", "16")],
+        deposits=[*paid_for(bought), deposit(date(2021, 6, 13), "500")],
         conversions=[
             conversion(date(2021, 6, 13), "400", "CZK", "16", "EUR"),
             conversion(date(2021, 6, 14), "1", "EUR", "1", "USD"),
@@ -610,19 +548,22 @@ def test_a_portfolios_value_is_its_holdings_and_its_cash_in_czk_negative_or_not(
     # 13 Jun: 100 CZK + 16 EUR x 25. 14 Jun: 100 CZK + 0.16 units x 100 EUR x 25 - 1 EUR x 25; USD has no rates.
     assert t.portfolios[PORTU].value == (Decimal(500), Decimal(100) + Decimal(400) - Decimal(25))
     assert t.portfolios[PORTU].cash_not_valued == {"USD": "no USD rates stored"}
-    # No Cash in Portfolios without Deposits.
+    # Its Deposit all went on its Purchase.
     assert t.portfolios[JT].value == t.holding_values[jt(CZK_FUND)]
 
 
 def test_a_portfolio_has_no_value_only_when_nothing_in_it_can_be_valued() -> None:
     t = valued(
-        [purchase(date(2021, 6, 13), "1000"), buy(date(2021, 6, 13), "0.04", "4")],
+        [
+            replace(purchase(date(2021, 6, 13), "40", isin=EUR_FUND), currency="EUR"),
+            buy(date(2021, 6, 13), "0.04", "4"),
+        ],
         deposits=[deposit(date(2021, 6, 13), "500")],
         today=date(2021, 6, 13),
     )
 
-    # Neither fund has prices and EUR has no rates, but Portu's CZK Cash can be valued, as in the Whole Portfolio's
-    # value.
+    # Neither fund has prices and EUR has no rates, so neither has the EUR Cash paid for it. Portu's CZK Cash can be
+    # valued, as in the Whole Portfolio's value.
     assert t.portfolios[PORTU].value == t.whole_portfolio_value == (Decimal(500),)
     assert t.portfolios[JT].value is None
 
@@ -653,9 +594,10 @@ def test_cash_is_valued_in_czk_at_the_last_known_rate_of_each_currency() -> None
 
 
 def test_whole_portfolio_value_is_the_funds_plus_the_cash_so_fees_reduce_it() -> None:
+    bought = purchase(date(2021, 6, 13), "1000", units="2")
     t = valued(
-        [purchase(date(2021, 6, 13), "1000", units="2")],
-        deposits=[deposit(date(2021, 6, 13), "500")],
+        [bought],
+        deposits=[*paid_for(bought), deposit(date(2021, 6, 13), "500")],
         fees=[portu_fee(date(2021, 6, 14), "25")],
         prices=[price(date(2021, 6, 13), "10")],
         today=date(2021, 6, 14),
@@ -708,54 +650,90 @@ def test_cash_with_no_rate_yet_has_no_value_unless_there_is_none_of_it() -> None
     assert t.whole_portfolio_value == (Decimal(1000), None, Decimal(1000), Decimal(1000))
 
 
-def fee(on: Purchase, day: date, czk: str) -> Fee:
-    """A Fee charged on `day` on a J&T Purchase."""
-    return Fee(on.portfolio, on.source_row_id, day, Decimal(czk), "CZK")
-
-
-def test_a_fee_counts_as_invested_and_never_as_value_at_every_level() -> None:
+def test_a_fee_is_paid_from_cash_so_it_lowers_the_value_and_is_never_invested() -> None:
     bought = purchase(date(2021, 6, 15), "9708.49")
     t = valued(
         [bought],
+        deposits=[deposited(date(2021, 6, 15), "10000.00")],
         fees=[fee(bought, date(2021, 6, 15), "291.51")],
         prices=[price(date(2021, 6, 15), "9708.49")],
         today=date(2021, 6, 15),
     )
 
     assert t.amount_invested == t.portfolios[JT].amount_invested == (Decimal("10000.00"),)
-    assert t.holding_amount_invested == {jt(CZK_FUND): (Decimal("10000.00"),)}
-    assert t.whole_portfolio_value == t.portfolios[JT].value == t.holding_values[jt(CZK_FUND)]
+    assert t.cash == {"CZK": (Decimal("0.00"),)}
     # 9 708.49 CZK of 10 000 invested: -2.9 % on day one.
-    assert t.whole_portfolio_value == (Decimal("9708.49"),)
+    assert t.whole_portfolio_value == t.portfolios[JT].value == (Decimal("9708.49"),)
 
 
-def test_the_hurdle_grows_each_fee_from_its_own_date_at_every_level() -> None:
-    levels = [
-        level(date(2021, 5, 1), "100"),
-        level(date(2021, 6, 1), "110"),
-        level(date(2021, 7, 1), "121"),
-        level(date(2021, 8, 1), "121"),
-    ]
-    bought = [purchase(date(2021, 5, 1), "1000")]
-    # Charged a month after the Purchase it was on.
-    t = valued(bought, fees=[fee(bought[0], date(2021, 6, 1), "50")], index_levels=levels, today=date(2021, 7, 1))
-    without_fee = valued(bought, index_levels=levels, today=date(2021, 7, 1)).hurdles[CSU_CPI].values
-
-    whole, portfolio = t.hurdles[CSU_CPI].values, t.portfolios[JT].hurdles[CSU_CPI].values
-    holding = t.holding_hurdles[jt(CZK_FUND)][CSU_CPI].values
-    charged = t.dates.index(date(2021, 6, 1))
-    # Before 1 Jun the Fee counts nowhere.
-    assert whole[:charged] == portfolio[:charged] == holding[:charged] == without_fee[:charged]
-    assert whole[-1] == portfolio[-1] == holding[-1] == Decimal(1210) + Decimal(55)
-
-
-def test_without_deposits_the_czk_converted_to_pay_for_a_purchase_counts_as_invested_in_it() -> None:
+def test_a_purchase_paid_for_by_a_conversion_leaves_no_cash_in_either_currency() -> None:
     bought = replace(purchase(date(2021, 6, 15), "391.80", isin=EUR_FUND), currency="EUR")
     paid = Conversion(
         JT, bought.source_row_id + CONVERSION_SUFFIX, bought.day, Decimal("9708.98"), "CZK", bought.amount, "EUR"
     )
-    t = valued([bought], conversions=[paid], fees=[fee(bought, bought.day, "291.02")], today=date(2021, 6, 15))
+    t = valued(
+        [bought],
+        deposits=[deposited(bought.day, "10000.00")],
+        conversions=[paid],
+        fees=[fee(bought, bought.day, "291.02")],
+        today=date(2021, 6, 15),
+    )
 
-    assert t.amount_invested == t.portfolios[JT].amount_invested == (Decimal("10000.00"),)
-    assert t.holding_amount_invested == {jt(EUR_FUND): (Decimal("10000.00"),)}
-    assert t.cash == {}
+    assert t.amount_invested == (Decimal("10000.00"),)
+    assert t.cash == {"CZK": (Decimal("0.00"),), "EUR": (Decimal("0.00"),)}
+    assert t.negative_cash == ()
+
+
+def test_amount_invested_is_the_deposits_and_purchases_fees_and_conversions_are_not() -> None:
+    bought = purchase(date(2021, 6, 14), "1000")
+    t = valued(
+        [bought],
+        deposits=[Deposit(JT, "jt deposit", date(2021, 6, 13), Decimal(1030), "CZK")],
+        fees=[fee(bought, bought.day, "30")],
+        conversions=[Conversion(JT, "swap", date(2021, 6, 15), Decimal(0), "CZK", Decimal(0), "EUR")],
+        today=date(2021, 6, 15),
+    )
+
+    assert t.amount_invested == t.portfolios[JT].amount_invested == (Decimal(1030),) * 3
+
+
+def test_negative_cash_in_any_currency_is_warned_about_by_portfolio_currency_and_day() -> None:
+    t = valued(
+        [buy(date(2021, 6, 14), "0.2", "20")],
+        deposits=[deposit(date(2021, 6, 13), "1000")],
+        conversions=[conversion(date(2021, 6, 16), "500", "CZK", "20", "EUR")],
+        rates=[rate(date(2021, 6, 13), "25")],
+        today=date(2021, 6, 17),
+    )
+
+    # 1000 CZK more than covers the 20 EUR short, but EUR Cash is still negative until it is converted.
+    assert t.whole_portfolio_value is not None
+    assert t.negative_cash == (NegativeCash(PORTU, "EUR", date(2021, 6, 14), date(2021, 6, 15)),)
+
+
+def test_cash_that_never_goes_negative_is_not_warned_about() -> None:
+    t = valued(
+        [buy(date(2021, 6, 14), "0.1", "10")],
+        deposits=[deposit(date(2021, 6, 13), "1000")],
+        conversions=[conversion(date(2021, 6, 13), "250", "CZK", "10", "EUR")],
+        today=date(2021, 6, 14),
+    )
+
+    assert t.negative_cash == ()
+
+
+def test_each_stretch_of_negative_cash_is_warned_about_on_its_own() -> None:
+    t = valued(
+        deposits=[deposit(date(2021, 6, 13), "100")],
+        conversions=[
+            conversion(date(2021, 6, 13), "1", "EUR", "25", "CZK"),
+            conversion(date(2021, 6, 14), "25", "CZK", "1", "EUR"),
+            conversion(date(2021, 6, 16), "1", "EUR", "25", "CZK"),
+        ],
+        today=date(2021, 6, 17),
+    )
+
+    assert t.negative_cash == (
+        NegativeCash(PORTU, "EUR", date(2021, 6, 13), date(2021, 6, 13)),
+        NegativeCash(PORTU, "EUR", date(2021, 6, 16), date(2021, 6, 17)),
+    )

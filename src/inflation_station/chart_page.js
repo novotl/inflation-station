@@ -92,7 +92,7 @@ const relativeShapes = () => [
 
 // A Holding's ISIN and Portfolio, and why it isn't valued.
 const holdingLine = f => `${esc(f.isin)} · ${esc(f.portfolio)}${f.notValued ? ` · <span class="neg">not valued: ${esc(f.notValued)}</span>` : ""}`;
-// A chart, or why there is none: a Holding in a Managed Portfolio that can't be valued has nothing to draw.
+// A chart, or why there is none: a Holding that can't be valued has nothing to draw.
 const czkChartOr = (el, item, height) => item.chart.length ? czkChart(el, item.chart, height)
   : el.innerHTML = `<p class="neg" style="padding:24px 0">Not valued: ${esc(item.notValued)}</p>`;
 
@@ -107,14 +107,14 @@ function renderDashboard(el) {
   const gain = minus(P.value, P.invested);
   el.innerHTML = `<h1>Whole Portfolio</h1><div class="kpis">
     ${kpi("Value today", czk(P.value), `<span class="muted">as of ${esc(D.asOf)}</span>`)}
-    ${kpi("Invested", czk(P.invested), `<span class="muted">fees included</span>`)}
+    ${kpi("Invested", czk(P.invested), `<span class="muted">Deposits</span>`)}
     ${kpi("Gain", signed(gain, czk(gain)), signed(gain, pct(vs(P.value, P.invested))))}
     ${P.hurdles.map(h => kpi(`vs inflation (${h.name})`, signed(minus(P.value, h.value), czk(minus(P.value, h.value))),
       `${signed(vs(P.value, h.value), pct(vs(P.value, h.value)))} <span class="muted">· hurdle ${czk(h.value)}</span>`)).join("")}
     </div><div class="card"><div id="dashboard-chart"></div></div>
     <h2>Portfolios</h2><div class="portfolio-cards"></div>
     <h2>Funds</h2><div class="card table-card"><table class="funds"><thead><tr><th>Fund</th><th>Priced in</th><th>Value</th>
-    <th>Invested</th><th>Gain</th><th>vs ${esc(D.benchmark ?? "inflation")}</th><th>Units</th></tr></thead><tbody></tbody></table></div>`;
+    <th>Units</th></tr></thead><tbody></tbody></table></div>`;
   czkChart("dashboard-chart", P.chart, 420);
   const portfolios = el.querySelector(".portfolio-cards");
   D.portfolios.forEach(a => {
@@ -122,7 +122,7 @@ function renderDashboard(el) {
     card.className = "card";
     const gain = minus(a.value, a.invested);
     card.innerHTML = `<h3>${esc(a.name)}</h3><div class="facts">
-      <div><b>Value</b>${czk(a.value)}</div><div><b>Invested</b>${czk(a.invested)}${a.managed ? ` <span class="muted">(Deposits)</span>` : ""}</div>
+      <div><b>Value</b>${czk(a.value)}</div><div><b>Invested</b>${czk(a.invested)}</div>
       <div><b>Gain</b>${signed(gain, czk(gain))} ${signed(gain, pct(vs(a.value, a.invested)))}</div>
       ${a.hurdles.map(h => `<div><b>vs ${esc(h.name)}</b>${signed(minus(a.value, h.value), czk(minus(a.value, h.value)))}
         ${signed(vs(a.value, h.value), pct(vs(a.value, h.value)))}</div>`).join("")}
@@ -134,13 +134,12 @@ function renderDashboard(el) {
   D.funds.forEach(f => {
     const row = document.createElement("tr");
     row.className = "row";
-    const gain = vs(f.value, f.invested), real = vs(f.value, f.benchmarkHurdle);
     row.innerHTML = `<td>${esc(f.name)}<div class="isin">${holdingLine(f)}</div></td>
       <td>${esc(f.pricedIn)}</td><td>${czk(f.value)}${f.currencyValue ? `<div class="isin">${abs(esc(f.currencyValue))}</div>` : ""}</td>
-      <td>${czk(f.invested)}</td><td class="${cls(gain)}">${pct(gain)}</td><td class="${cls(real)}">${pct(real)}</td><td>${abs(esc(f.units))}</td>`;
+      <td>${abs(esc(f.units))}</td>`;
     const detail = document.createElement("tr");
     detail.hidden = true;
-    detail.innerHTML = `<td colspan="7" style="text-align:left"><div></div></td>`;
+    detail.innerHTML = `<td colspan="4" style="text-align:left"><div></div></td>`;
     row.onclick = () => {
       detail.hidden = !detail.hidden;
       row.classList.toggle("open", !detail.hidden);
@@ -166,10 +165,10 @@ function renderRelative(el) {
       <div class="kpi"><div class="label">Whole Portfolio vs invested</div><div class="big ${cls(nominal)}">${pct(nominal)}</div>
         <div class="sub muted">${czk(P.value)} vs ${czk(P.invested)}</div></div></div>
     <div class="card"><div id="relative-chart"></div></div>
-    <h2>Per Portfolio and fund <span class="muted" style="font-size:14px;font-weight:normal">(same scale everywhere)</span></h2>
-    <div class="grid portfolios"></div><div class="grid funds"></div>`;
+    <h2>Per Portfolio <span class="muted" style="font-size:14px;font-weight:normal">(same scale everywhere)</span></h2>
+    <div class="grid portfolios"></div>`;
   plot("relative-chart", P.relative, { yaxis: { tickformat: "+.0%", zeroline: false }, shapes: relativeShapes(), height: 380, margin: { t: 10 } }, { pct: true });
-  const all = D.portfolios.concat(D.funds).flatMap(f => f.relative.flatMap(t => t.y)).filter(y => y != null);
+  const all = D.portfolios.flatMap(a => a.relative.flatMap(t => t.y)).filter(y => y != null);
   const range = all.length ? [Math.min(...all) - .05, Math.max(...all) + .05] : undefined;
   const cell = (grid, name, item, sub) => {
     const now = D.benchmark ? vs(item.value, item.benchmarkHurdle) : vs(item.value, item.invested);
@@ -180,14 +179,10 @@ function renderRelative(el) {
     grid.append(div);
     const chart = div.lastElementChild;
     if (item.notValued) { chart.innerHTML = `<p class="neg" style="padding:24px 0">Not valued: ${esc(item.notValued)}</p>`; return; }
-    // Nothing is invested in a Holding in a Managed Portfolio, so there is nothing to measure it against.
-    if (!item.relative.length) { chart.innerHTML = `<p class="muted" style="padding:24px 0">In a Managed Portfolio: its Portfolio is measured instead.</p>`; return; }
     plot(chart, item.relative, { yaxis: { tickformat: "+.0%", range, zeroline: false }, shapes: relativeShapes(), showlegend: false,
       height: 220, margin: { t: 6, b: 30, l: 50, r: 10 } }, { pct: true });
   };
-  D.portfolios.forEach(a => cell(el.querySelector(".grid.portfolios"), a.name, a, `${a.managed ? "Managed Portfolio · " : ""}${czk(a.value)}`));
-  D.funds.forEach(f => cell(el.querySelector(".grid.funds"), f.name, f,
-    `${esc(f.isin)} · ${esc(f.portfolio)} · priced in ${esc(f.pricedIn)} · ${czk(f.value)}`));
+  D.portfolios.forEach(a => cell(el.querySelector(".grid.portfolios"), a.name, a, czk(a.value)));
 }
 
 // ---------- fund strip: a tile per Portfolio and per fund above one big chart of the one picked ----------
@@ -201,8 +196,7 @@ function renderFunds(el) {
       rel: D.benchmark ? vs(a.value, a.benchmarkHurdle) : vs(a.value, a.invested),
       label: a.notValued ? "not valued" : standing(a.value, a.benchmarkHurdle, a.invested) })))
     .concat(D.funds.map(f => ({ key: "f" + f.key, f, name: f.name, value: f.value,
-      rel: f.managed ? null : D.benchmark ? vs(f.value, f.benchmarkHurdle) : vs(f.value, f.invested),
-      label: f.notValued ? "not valued" : f.managed ? "Managed Portfolio" : standing(f.value, f.benchmarkHurdle, f.invested) })));
+      rel: null, label: f.notValued ? "not valued" : `${abs(esc(f.units))} units` })));
   const height = () => Math.max(500, innerHeight - 300);
   let picked = "";
   const draw = () => {
@@ -217,15 +211,15 @@ function renderFunds(el) {
       czkChart(detail.lastElementChild, P.composition, height());
     } else if (picked.startsWith("a")) {
       const { a } = items.find(it => it.key === picked);
-      detail.innerHTML = `<h1>${esc(a.name)}</h1><div class="facts">${fact("Value", czk(a.value))}${fact(a.managed ? "Deposits" : "Invested", czk(a.invested))}
+      detail.innerHTML = `<h1>${esc(a.name)}</h1><div class="facts">${fact("Value", czk(a.value))}${fact("Invested", czk(a.invested))}
         ${a.hurdles.map(h => fact(`Hurdle (${h.name})`, czk(h.value))).join("")}</div>${portfolioNotes(a)}<div></div>`;
       czkChart(detail.lastElementChild, a.chart, height());
     } else {
       const { f } = items.find(it => it.key === picked);
       detail.innerHTML = `<h1>${esc(f.name)}</h1><div class="facts">${fact("ISIN", esc(f.isin))}${fact("Portfolio", esc(f.portfolio))}${fact("Priced in", esc(f.pricedIn))}
-        ${fact("Value", czk(f.value) + (f.currencyValue ? ` (${abs(esc(f.currencyValue))})` : ""))}${f.managed ? "" : fact("Invested", czk(f.invested))}
+        ${fact("Value", czk(f.value) + (f.currencyValue ? ` (${abs(esc(f.currencyValue))})` : ""))}
         ${fact("Units", abs(esc(f.units)))}</div>${f.notValued ? `<p class="warn">Not valued: ${esc(f.notValued)}</p>` : ""}<div></div>`;
-      // Not valued, in a Managed Portfolio: the warning says why, and there is nothing to draw.
+      // Not valued: the warning says why, and there is nothing to draw.
       if (f.chart.length) czkChart(detail.lastElementChild, f.chart, height());
     }
   };
