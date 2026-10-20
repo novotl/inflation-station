@@ -57,7 +57,7 @@ h2 { font-size: 18px; letter-spacing: -.01em; margin: 32px 0 12px; font-weight: 
 .view { display: none; max-width: 1480px; margin: 0 auto; padding: 28px 24px 48px; }
 .view.active { display: block; }
 
-/* Dashboard: figures, the Whole Portfolio chart, a table of funds whose rows open their chart. */
+/* Dashboard: figures, the Whole Portfolio chart, a section per Platform total and per Portfolio, a table of funds. */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin: 0 0 20px; }
 .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
   padding: 16px 18px; }
@@ -71,22 +71,19 @@ table.funds th { font-size: 11px; text-transform: uppercase; letter-spacing: .06
 table.funds th, table.funds td { padding: 12px 16px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
 table.funds th:first-child, table.funds td:first-child { text-align: left; white-space: normal; }
 table.funds tr:last-child td { border-bottom: 0; }
-table.funds tr.row { cursor: pointer; transition: background .12s; }
-table.funds tr.row:hover { background: var(--hover); }
-table.funds tr.row.open { background: var(--accent-soft); }
 table.funds td.pos, table.funds td.neg { font-weight: 600; }
 
-/* A section per Portfolio, styled like the Whole Portfolio chart above it. */
+/* A section per Platform total and per Portfolio, styled like the Whole Portfolio chart above it. */
 .portfolio-cards h3 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
 
-/* Relative to inflation: the Whole Portfolio, then a small chart per fund on one scale. */
+/* Relative to inflation: the Whole Portfolio, then a small chart per Platform total and per Portfolio on one scale. */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
 .cell { margin: 0; padding: 14px 16px 6px; }
 .cell h3 { font-size: 14px; font-weight: 600; margin: 0 0 2px; display: flex; justify-content: space-between; gap: 12px; }
 .cell h3 .pct { white-space: nowrap; padding: 2px 8px; border-radius: 999px; font-size: 13px; }
 .cell h3 .pct.pos { background: var(--pos-soft); } .cell h3 .pct.neg { background: var(--neg-soft); }
 
-/* Fund strip: a tile per fund above one big chart of the one picked. */
+/* Strip: a tile per Platform total and per Portfolio above one big chart of the one picked. */
 .strip-page { display: flex; flex-direction: column; padding: 0; overflow: hidden; min-height: calc(100vh - 200px); }
 .strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px;
   border-bottom: 1px solid var(--line); background: var(--surface-2); padding: 8px; }

@@ -135,7 +135,8 @@ def test_refetching_keeps_stored_prices_when_conseq_changes_them(tmp_path: Path,
     run("--data-dir", tmp_path, "chart")
 
     # 79.90 units at the stored price of 1 463 CZK on 1 Jul 2021, not at Conseq's changed price of 1.
-    assert composition(tmp_path)["FF - World Fund A-ACC-CZK"]["y"][-1] == pytest.approx(79.90 * 1463)
+    # Its Portfolio's Cash is all spent by then.
+    assert composition(tmp_path)["J&T Banka · FF - World Fund A-ACC-CZK"]["y"][-1] == pytest.approx(79.90 * 1463)
 
 
 def with_every_price_set_to(price: str, xlsx: Path, changed: Path) -> Path:
