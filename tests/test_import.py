@@ -19,12 +19,17 @@ EXPORT = FIXTURES / "jt_export.csv"
 INVESTIKA_CASH = FIXTURES / "investika" / "cash.pdf"
 INVESTIKA_HOLDINGS = FIXTURES / "investika" / "holdings.pdf"
 REPO_DATA_DIR = Path(__file__).resolve().parents[1] / "data"
-# What importing the J&T fixture reports the first time, and again: a Conversion paid for each Purchase priced in EUR.
-JT_PORTFOLIO = Portfolio(Platform.JT, "900000001", "900000001")
+# One Portfolio per Fund bought in J&T portfolio 900000001.
+WORLD_FUND = Portfolio(Platform.JT, "900000001 LU1756523376", "FF - World Fund A-ACC-CZK")
+PIONEER_FUND = Portfolio(Platform.JT, "900000001 LU1883872332", "AMUNDI FUNDS US PIONEER FUND - A EUR (C)")
+# What importing the J&T fixture reports the first time, and again: a Deposit paid for each Purchase, and a
+# Conversion for each Purchase priced in EUR.
 JT_ADDED = (
+    "7 Deposits added, 0 already present.\n"
     "7 Purchases added, 0 already present.\n7 Fees added, 0 already present.\n3 Conversions added, 0 already present.\n"
 )
 JT_PRESENT = (
+    "0 Deposits added, 7 already present.\n"
     "0 Purchases added, 7 already present.\n0 Fees added, 7 already present.\n0 Conversions added, 3 already present.\n"
 )
 
@@ -51,13 +56,13 @@ def test_jt_row_with_a_fee_imports_as_the_purchase_of_its_units_plus_a_fee(tmp_p
     fee = next(f for f in rows.fees if f.source_row_id == "900100003")
     # The row paid 8 000 CZK with a 231.24 CZK fee.
     assert (purchase.portfolio, purchase.fund, purchase.currency, purchase.amount) == (
-        JT_PORTFOLIO,
+        WORLD_FUND,
         Fund("LU1756523376", "FF - World Fund A-ACC-CZK"),
         "CZK",
         Decimal("7768.76"),
     )
     assert (fee.portfolio, fee.day, fee.amount, fee.currency) == (
-        JT_PORTFOLIO,
+        WORLD_FUND,
         date(2021, 6, 15),
         Decimal("231.24"),
         "CZK",
@@ -70,7 +75,7 @@ def test_jt_row_priced_in_eur_imports_as_a_fee_a_conversion_and_a_purchase_in_eu
     rows = Store(tmp_path).rows()
     # The row paid 5 000 CZK with a 145.63 CZK fee, and bought 12.07 units at 15.52 EUR for 187.34 EUR.
     assert next(c for c in rows.conversions if c.source_row_id == "900100004:conversion") == Conversion(
-        JT_PORTFOLIO, "900100004:conversion", date(2021, 6, 15), Decimal("4854.37"), "CZK", Decimal("187.34"), "EUR"
+        PIONEER_FUND, "900100004:conversion", date(2021, 6, 15), Decimal("4854.37"), "CZK", Decimal("187.34"), "EUR"
     )
     purchase = next(p for p in rows.purchases if p.source_row_id == "900100004")
     assert (purchase.units, purchase.unit_price, purchase.currency, purchase.amount) == (
@@ -107,6 +112,48 @@ def test_each_jt_purchase_its_fee_and_its_conversion_add_up_to_the_payment(tmp_p
     }
 
 
+def test_jt_export_imports_a_portfolio_per_fund_bought_in_each_jt_portfolio(tmp_path: Path) -> None:
+    export = tmp_path / "jt_export.csv"
+    # Move one World Fund Purchase, and the Deposit paying for it, to another J&T portfolio.
+    export.write_text(
+        EXPORT.read_text(encoding="utf-8")
+        .replace("900100007;900000001", "900100007;900000002")
+        .replace("900100009;900000001", "900100009;900000002"),
+        encoding="utf-8",
+    )
+    run("--data-dir", tmp_path, "import", export)
+
+    rows = Store(tmp_path).rows()
+    assert sorted({(p.portfolio.key, p.portfolio.name) for p in rows.purchases}) == [
+        ("900000001 CZ0008473808", "J&T MONEY A CZK OPF"),
+        ("900000001 LU0260870158", "FTIF-Franklin Technology Fund-A(acc)EUR"),
+        ("900000001 LU1756523376", "FF - World Fund A-ACC-CZK"),
+        ("900000001 LU1883872332", "AMUNDI FUNDS US PIONEER FUND - A EUR (C)"),
+        ("900000002 LU1756523376", "FF - World Fund A-ACC-CZK"),
+    ]
+    assert {(p.portfolio.key, p.source_row_id) for p in rows.purchases if p.portfolio.key.startswith("900000002")} == {
+        ("900000002 LU1756523376", "900100007")
+    }
+
+
+def test_each_jt_deposit_goes_to_the_portfolio_of_the_purchase_it_paid_for(tmp_path: Path) -> None:
+    run("--data-dir", tmp_path, "import", EXPORT)
+
+    deposits = sorted(
+        (d.source_row_id, d.portfolio.key, d.day, d.amount, d.currency) for d in Store(tmp_path).rows().deposits
+    )
+    assert deposits == [
+        # Paid 8 000 CZK and 5 000 CZK, settling the Purchases traded three days before.
+        ("900100001", "900000001 LU1756523376", date(2021, 6, 18), Decimal(8000), "CZK"),
+        ("900100002", "900000001 LU1883872332", date(2021, 6, 18), Decimal(5000), "CZK"),
+        ("900100005", "900000001 LU0260870158", date(2021, 6, 17), Decimal(5000), "CZK"),
+        ("900100009", "900000001 LU1756523376", date(2021, 5, 21), Decimal(8000), "CZK"),
+        ("900100010", "900000001 LU0260870158", date(2021, 5, 21), Decimal(5000), "CZK"),
+        ("900100012", "900000001 CZ0008473808", date(2021, 5, 4), Decimal(100000), "CZK"),
+        ("900100014", "900000001 LU1756523376", date(2021, 5, 3), Decimal(104000), "CZK"),
+    ]
+
+
 def test_jt_row_with_a_zero_fee_imports_without_a_fee(tmp_path: Path) -> None:
     export = tmp_path / "jt_export.csv"
     # A zero fee has no currency to check.
@@ -122,24 +169,60 @@ def test_jt_row_with_a_zero_fee_imports_without_a_fee(tmp_path: Path) -> None:
     assert "900100003" not in {f.source_row_id for f in rows.fees}
 
 
-def test_cash_deposit_rows_do_not_produce_purchases(tmp_path: Path) -> None:
-    deposits_only = tmp_path / "deposits.csv"
-    lines = EXPORT.read_text(encoding="utf-8").splitlines(keepends=True)
-    deposits_only.write_text("".join(lines[:1] + [line for line in lines[1:] if ";Vklad - " in line]), encoding="utf-8")
-
-    assert run("--data-dir", tmp_path, "import", deposits_only) == (
-        0,
-        "0 Purchases added, 0 already present.\n",
-        "",
-    )
-
-
-def test_renamed_cash_deposit_rows_do_not_produce_purchases(tmp_path: Path) -> None:
+def test_jt_deposit_with_no_purchase_to_pair_with_fails_naming_the_row_and_imports_nothing(tmp_path: Path) -> None:
     assert run("--data-dir", tmp_path, "import", FIXTURES / "jt_export_cash_deposits.csv") == (
-        0,
-        "0 Purchases added, 0 already present.\n",
+        1,
         "",
+        (
+            "Error: jt_export_cash_deposits.csv row 2 (ID pohybu 900100001): no Purchase paid 8000.00 CZK "
+            "in J&T portfolio 900000001 within 7 days of this Deposit, so its Portfolio is unknown\n"
+        ),
     )
+
+    _, out, _ = run("--data-dir", tmp_path, "import", EXPORT)
+    assert out == JT_ADDED
+
+
+@pytest.mark.parametrize(
+    ("deposited", "exit_code"),
+    [
+        # J&T now takes the Deposit before the trade, and used to settle after it: up to 7 days either way.
+        ("28.04.2021", 0),
+        ("21.04.2021", 0),
+        ("20.04.2021", 1),
+        ("05.05.2021", 0),
+        ("06.05.2021", 1),
+    ],
+)
+def test_jt_deposit_pairs_with_a_purchase_traded_within_a_week_of_it(
+    tmp_path: Path, deposited: str, exit_code: int
+) -> None:
+    export = tmp_path / "jt_export.csv"
+    # Move the Deposit paying for the 104 000 CZK Purchase traded on 28.04.2021.
+    export.write_text(
+        EXPORT.read_text(encoding="utf-8").replace("00:00 03.05.2021;;Vklad", f"00:00 {deposited};;Vklad"),
+        encoding="utf-8",
+    )
+
+    assert run("--data-dir", tmp_path, "import", export)[0] == exit_code
+    if exit_code == 0:
+        deposit = next(d for d in Store(tmp_path).rows().deposits if d.source_row_id == "900100014")
+        assert deposit.portfolio == WORLD_FUND
+
+
+def test_jt_deposit_not_in_czk_is_not_implemented(tmp_path: Path) -> None:
+    export = tmp_path / "jt_export.csv"
+    export.write_text(
+        EXPORT.read_text(encoding="utf-8").replace(
+            ';;;;"5 000,00";CZK;;;;900100002', ';;;;"5 000,00";EUR;;;;900100002'
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(main, ["--data-dir", str(tmp_path), "import", str(export)])
+
+    assert isinstance(result.exception, NotImplementedError)
+    assert "900100002" in str(result.exception)
 
 
 def test_deposit_row_carrying_an_isin_is_an_unknown_movement_type(tmp_path: Path) -> None:
@@ -178,6 +261,7 @@ def test_importing_an_overlapping_export_adds_only_new_purchases(tmp_path: Path)
     assert run("--data-dir", tmp_path, "import", FIXTURES / "jt_export_overlap.csv") == (
         0,
         (
+            "2 Deposits added, 3 already present.\n"
             "2 Purchases added, 3 already present.\n2 Fees added, 3 already present.\n"
             "1 Conversions added, 2 already present.\n"
         ),
@@ -339,6 +423,7 @@ def test_jt_export_and_investika_pair_import_together(tmp_path: Path) -> None:
     assert run("--data-dir", tmp_path, "import", EXPORT, INVESTIKA_CASH, INVESTIKA_HOLDINGS) == (
         0,
         (
+            "7 Deposits added, 0 already present.\n"
             "9 Purchases added, 0 already present.\n9 Fees added, 0 already present.\n"
             "3 Conversions added, 0 already present.\n"
         ),

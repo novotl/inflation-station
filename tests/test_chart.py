@@ -15,7 +15,9 @@ from inflation_station.domain import Deposit, Fund, Platform, Portfolio, Purchas
 from inflation_station.fund_price import FundPrice
 from inflation_station.valuation import timeline
 
-EXPORT = Path(__file__).parent / "fixtures" / "jt_export.csv"
+# The J&T fixture without its Deposits, so its Portfolios are valued by what their Purchases paid until valuation
+# takes Deposits as the amount invested.
+EXPORT = Path(__file__).parent / "fixtures" / "jt_export_purchases.csv"
 # ČSÚ's May 2021 change, 0.2 %, which by "today", 1 Jul 2021, also estimates June and July.
 CSU_MAY = 1.002
 # The fixture's Purchases, grown by an index rising `may` a month from May 2021: 104 000 CZK on 28 Apr and 100 000 CZK
@@ -477,16 +479,20 @@ def test_each_portfolio_has_a_section_headed_by_its_platform_and_name_largest_va
     run("--data-dir", tmp_path, "import", PORTU_EXPORT)
     run("--data-dir", tmp_path, "chart")
 
-    jt, portu = page(tmp_path)["portfolios"]
-    assert (jt["name"], jt["managed"], portu["name"], portu["managed"]) == (
-        "J&T Banka · 900000001",
-        False,
-        "Portu · Moje portfolio",
-        True,
-    )
-    assert jt["value"] == pytest.approx(FF_WORLD + JT_MONEY + FRANKLIN + AMUNDI)
-    assert jt["invested"] == 235000  # noqa: PLR2004 - the fixture's seven Purchases
-    assert jt["benchmarkHurdle"] == pytest.approx(hurdle_on_1_jul(CSU_MAY))
+    portfolios = page(tmp_path)["portfolios"]
+    # A J&T Portfolio per Fund.
+    assert [(p["name"], p["managed"]) for p in portfolios] == [
+        ("J&T Banka · FF - World Fund A-ACC-CZK", False),
+        ("J&T Banka · J&T MONEY A CZK OPF", False),
+        ("J&T Banka · FTIF-Franklin Technology Fund-A(acc)EUR", False),
+        ("Portu · Moje portfolio", True),
+        ("J&T Banka · AMUNDI FUNDS US PIONEER FUND - A EUR (C)", False),
+    ]
+    jt, portu = portfolios[0], portfolios[3]
+    jt_portfolios = [p for p in portfolios if p is not portu]
+    assert [p["value"] for p in jt_portfolios] == pytest.approx([FF_WORLD, JT_MONEY, FRANKLIN, AMUNDI])
+    assert sum(p["invested"] for p in jt_portfolios) == 235000  # noqa: PLR2004 - the fixture's seven Purchases
+    assert sum(p["benchmarkHurdle"] for p in jt_portfolios) == pytest.approx(hurdle_on_1_jul(CSU_MAY))
     assert [h["name"] for h in jt["hurdles"]] == ["ČSÚ CPI", "Eurostat HICP"]
     # A Managed Portfolio's money invested is its two Deposits. Its funds have no prices, so its value is its
     # Cash: 8 116 CZK, and no EUR.
@@ -498,7 +504,7 @@ def test_each_portfolio_has_a_section_headed_by_its_platform_and_name_largest_va
         "ZPRS GY (no prices stored)",
         "USD Cash (no USD rates stored)",
     ]
-    assert jt["leftOut"] == []
+    assert all(p["leftOut"] == [] for p in jt_portfolios)
     # Styled like the Whole Portfolio chart: value, amount invested and both hurdles, each in its role.
     assert {name: line["meta"] for name, line in by_name(jt["chart"]).items()} == {
         "Value": "value",
@@ -515,7 +521,12 @@ def test_each_fund_section_is_a_holding_naming_its_portfolio(tmp_path: Path) -> 
     fetch_everything(tmp_path)
     run("--data-dir", tmp_path, "chart")
 
-    assert {f["portfolio"] for f in page(tmp_path)["funds"]} == {"J&T Banka · 900000001"}
+    assert {(f["portfolio"], f["name"]) for f in page(tmp_path)["funds"]} == {
+        ("J&T Banka · FF - World Fund A-ACC-CZK", "FF - World Fund A-ACC-CZK"),
+        ("J&T Banka · J&T MONEY A CZK OPF", "J&T MONEY A CZK OPF"),
+        ("J&T Banka · FTIF-Franklin Technology Fund-A(acc)EUR", "FTIF-Franklin Technology Fund-A(acc)EUR"),
+        ("J&T Banka · AMUNDI FUNDS US PIONEER FUND - A EUR (C)", "AMUNDI FUNDS US PIONEER FUND - A EUR (C)"),
+    }
     assert len({f["key"] for f in page(tmp_path)["funds"]}) == 4  # noqa: PLR2004 - the fixture's funds
 
 
