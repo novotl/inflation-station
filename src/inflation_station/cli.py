@@ -3,7 +3,7 @@ from pathlib import Path
 import click
 
 from inflation_station import clock, cnb, csu, eurostat
-from inflation_station.chart import write_chart
+from inflation_station.chart import portfolio_name, write_chart
 from inflation_station.domain import Rows
 from inflation_station.errors import InflationStationError
 from inflation_station.freshness import out_of_date
@@ -145,6 +145,7 @@ def chart(data_dir: Path) -> None:
     except InflationStationError as e:
         raise click.ClickException(str(e)) from e
     _report_not_valued(t, {p.currency for p in prices} | set(t.cash))
+    _report_negative_cash(t)
     for warning in warnings:
         click.echo(f"Out of date: {warning}", err=True)
     click.echo(f"Chart written to {path}")
@@ -191,3 +192,13 @@ def _report_not_valued(t: Timeline, currencies: set[str]) -> None:
         else:
             hint = ""
         click.echo(f"Not valued ({reason}{hint}): {', '.join(left_out)}", err=True)
+
+
+def _report_negative_cash(t: Timeline) -> None:
+    """Name the days each Portfolio's Cash in a currency was negative, on stderr: a warning, not a failure."""
+    by_cash: dict[tuple[str, str], list[str]] = {}
+    for n in t.negative_cash:
+        days = f"{n.first_day}" + ("" if n.last_day == n.first_day else f" to {n.last_day}")
+        by_cash.setdefault((portfolio_name(n.portfolio), n.currency), []).append(days)
+    for (portfolio, currency), days in by_cash.items():
+        click.echo(f"Negative Cash ({currency}): {portfolio} on {', '.join(days)}", err=True)

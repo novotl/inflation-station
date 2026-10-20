@@ -89,7 +89,7 @@ def _page_data(timeline: Timeline, warnings: Sequence[str]) -> dict[str, Any]:
                 timeline.portfolios, {a: t.value for a, t in timeline.portfolios.items() if t.value is not None}
             )
         ],
-        "funds": [_holding_section(timeline, holding, benchmark) for holding in order],
+        "funds": [_holding_section(timeline, holding) for holding in order],
     }
 
 
@@ -102,8 +102,7 @@ def _portfolio_section(timeline: Timeline, portfolio: Portfolio, benchmark: str 
     missing = (["funds"] if held else []) + (["Cash"] if series.cash_not_valued else [])
     return {
         "key": _key(portfolio),
-        "name": _portfolio_name(portfolio),
-        "managed": series.managed,
+        "name": portfolio_name(portfolio),
         "value": _last(series.value),
         "invested": _last(series.amount_invested),
         "hurdles": [{"name": NAMES[s], "value": _last(h.values)} for s, h in series.hurdles.items()],
@@ -121,33 +120,25 @@ def _portfolio_section(timeline: Timeline, portfolio: Portfolio, benchmark: str 
     }
 
 
-def _holding_section(timeline: Timeline, holding: Holding, benchmark: str | None) -> dict[str, Any]:
-    """A Holding's figures on the last day and its charts. In a Managed Portfolio it has nothing invested in it, so no
-    amount invested or hurdle (ADR-0002).
+def _holding_section(timeline: Timeline, holding: Holding) -> dict[str, Any]:
+    """A Holding's figures on the last day and its chart. Nothing is invested in a Holding, only in its Portfolio, so
+    it has no amount invested or hurdle (ADR-0002).
     """
     isin = holding.isin
-    invested = timeline.holding_amount_invested.get(holding)
-    hurdle = timeline.holding_hurdles[holding][benchmark] if benchmark and invested is not None else None
     currency = timeline.fund_currencies.get(isin, CZK)
     currency_value = _last(timeline.holding_currency_values.get(holding))
     return {
         "key": _key(holding),
         "isin": isin,
         "name": timeline.fund_names[isin],
-        "portfolio": _portfolio_name(holding.portfolio),
-        "managed": timeline.portfolios[holding.portfolio].managed,
+        "portfolio": portfolio_name(holding.portfolio),
         "pricedIn": timeline.priced_in[isin],
         "value": _last(timeline.holding_values.get(holding)),
         # Only for funds valued in a currency other than CZK.
         "currencyValue": None if currency == CZK or currency_value is None else f"{currency_value:,.2f} {currency}",
-        "invested": _last(invested),
         "units": _units(timeline.units_held[holding][-1]),
-        "benchmarkHurdle": _last(hurdle.values) if hurdle else None,
         "notValued": timeline.not_valued.get(isin),
         "chart": _holding_chart(timeline, holding),
-        "relative": []
-        if invested is None
-        else _relative(timeline.dates, timeline.holding_values.get(holding), invested, hurdle),
     }
 
 
@@ -178,7 +169,7 @@ def _composition(timeline: Timeline, order: Sequence[Holding]) -> list[dict[str,
         _holding_value(
             timeline,
             h,
-            timeline.fund_names[h.isin] + (f" ({_portfolio_name(h.portfolio)})" if held_in.count(h.isin) > 1 else ""),
+            timeline.fund_names[h.isin] + (f" ({portfolio_name(h.portfolio)})" if held_in.count(h.isin) > 1 else ""),
             stackgroup="value",
             line={"width": 0},
         )
@@ -204,28 +195,10 @@ def _portfolio_chart(timeline: Timeline, portfolio: Portfolio) -> list[dict[str,
 
 
 def _holding_chart(timeline: Timeline, holding: Holding) -> list[dict[str, Any]]:
-    """The Holding's value, the amount invested in it and its inflation hurdles, in CZK, from its Purchases only.
-
-    In a Managed Portfolio, its value only: none when it can't be valued.
-    """
-    traces = []
-    if holding in timeline.holding_values:
-        traces.append(_holding_value(timeline, holding, "Value", meta=VALUE, line={"width": 3}))
-    if holding not in timeline.holding_amount_invested:
-        return traces
-    # With no value line to show them, the units held go on the amount invested.
-    invested_hover: dict[str, Any] = (
-        {
-            "customdata": [[_units(units)] for units in timeline.units_held[holding]],
-            "hovertemplate": f"{HOVER_CZK} · %{{customdata[0]}} units",
-        }
-        if holding not in timeline.holding_values
-        else {}
-    )
-    traces.append(_invested(timeline.dates, timeline.holding_amount_invested[holding], **invested_hover))
-    for series, hurdle in timeline.holding_hurdles[holding].items():
-        traces += _hurdle(timeline.dates, hurdle, series)
-    return traces
+    """The Holding's value in CZK; none when it can't be valued."""
+    if holding not in timeline.holding_values:
+        return []
+    return [_holding_value(timeline, holding, "Value", meta=VALUE, line={"width": 3})]
 
 
 def _relative(
@@ -274,11 +247,9 @@ def _line(
     return trace | extra
 
 
-def _invested(
-    dates: Sequence[date], invested: Sequence[Decimal], width: float = 1.5, **extra: object
-) -> dict[str, Any]:
-    """A step line: the amount invested changes only on trade dates."""
-    return _line(dates, invested, "Amount invested", INVESTED, line={"shape": "hv", "width": width}, **extra)
+def _invested(dates: Sequence[date], invested: Sequence[Decimal], width: float = 1.5) -> dict[str, Any]:
+    """A step line: the amount invested changes only on Deposit dates."""
+    return _line(dates, invested, "Amount invested", INVESTED, line={"shape": "hv", "width": width})
 
 
 def _holding_value(
@@ -327,7 +298,7 @@ def _hurdle(dates: Sequence[date], hurdle: Hurdle, series: str, width: float = 1
     ]
 
 
-def _portfolio_name(portfolio: Portfolio) -> str:
+def portfolio_name(portfolio: Portfolio) -> str:
     """`<Platform> · <Portfolio>`, as the Portfolio's section is headed."""
     return f"{PLATFORM_NAMES[portfolio.platform]} · {portfolio.name}"
 

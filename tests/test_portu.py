@@ -274,6 +274,8 @@ def test_chart_names_portu_funds_with_no_prices_and_cash_with_no_rates(tmp_path:
         f"SXR7 GY ({SXR7}), CSPX LN ({CSPX}), ZPRS GY ({ZPRS})\n"
         "Not valued (no EUR rates stored; run inflation-station fetch-fx): EUR Cash\n"
         "Not valued (no USD rates stored; run inflation-station fetch-fx): USD Cash\n"
+        # The hedging swap's USD leg went out a day before it came back.
+        "Negative Cash (USD): Portu · Moje portfolio on 2021-03-17\n"
     )
 
 

@@ -1,7 +1,7 @@
 """Turns imported rows, prices and price indices into a daily timeline of plain data. No I/O: all of it is passed in.
 
-Until every Platform imports its Deposits, a Portfolio with none has the CZK it paid out of Cash as its amount invested
-and no Cash; one with Deposits has them as its amount invested, and Cash.
+Every Portfolio is valued the same way: its Deposits are its amount invested (ADR-0002), and its value is its Holdings
+and its Cash.
 """
 
 from bisect import bisect_right
@@ -12,7 +12,6 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, NamedTuple
 
 from inflation_station.currency import CZK
-from inflation_station.domain import CONVERSION_SUFFIX
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -34,10 +33,10 @@ def no_rates(currency: str) -> str:
 class Hurdle:
     """What the money invested would need to be worth on each day to keep its purchasing power, by one price index.
 
-    A value is None on a day the index is unknown for a Purchase, Fee or Deposit counted that day.
+    A value is None on a day the index is unknown for a Deposit counted that day.
     """
 
-    # Σ CZK x I(day) / I(date), over the CZK of Purchases, the Fees and the Deposits dated on or before the day.
+    # Σ CZK x I(day) / I(date), over the Deposits dated on or before the day.
     values: tuple[Decimal | None, ...]
     # The first day whose index leans on an estimated month: the day after the last published month starts.
     estimated_from: date
@@ -54,13 +53,23 @@ class Holding(NamedTuple):
         return self.fund.isin
 
 
+class NegativeCash(NamedTuple):
+    """A stretch of consecutive days on which a Portfolio's Cash in one currency is below zero.
+
+    Cash in another currency doesn't make up for it: a Portfolio can't pay in a currency it doesn't hold.
+    """
+
+    portfolio: Portfolio
+    currency: str
+    first_day: date
+    last_day: date
+
+
 @dataclass(frozen=True)
 class PortfolioTimeline:
     """One Portfolio's series, lined up with the Timeline's `dates`."""
 
-    # Whether it has Deposits, so they are its amount invested (ADR-0002) and it has Cash.
-    managed: bool
-    # The CZK of its Deposits, or without any the CZK it paid out of Cash, dated on or before each day.
+    # The CZK of its Deposits dated on or before each day.
     amount_invested: tuple[Decimal, ...]
     # The sum of the CZK values of its Holdings and its Cash that can be valued, as `Timeline.whole_portfolio_value`;
     # None when none of them can be.
@@ -83,10 +92,6 @@ class Timeline:
     amount_invested: tuple[Decimal, ...]
     # Every Portfolio with imported rows, by Portfolio.
     portfolios: Mapping[Portfolio, PortfolioTimeline]
-    # `amount_invested` by Holding, for every Holding in a Portfolio without Deposits: the CZK paid for its Purchases,
-    # with the Fees and Conversions that share their source rows. A Holding in a Portfolio with Deposits has nothing
-    # invested in it (ADR-0002).
-    holding_amount_invested: Mapping[Holding, tuple[Decimal, ...]]
     # The latest fund name by ISIN, for every fund purchased or held.
     fund_names: Mapping[str, str]
     # Units held by Holding, for every fund bought or sold in each Portfolio: its Purchases' units less its Sales', on
@@ -109,11 +114,8 @@ class Timeline:
     not_valued: Mapping[str, str]
     # The inflation hurdle by price index series, for every series with index levels.
     hurdles: Mapping[str, Hurdle]
-    # `hurdles` by Holding, counting only that Holding's Purchases and Fees, for the same Holdings as
-    # `holding_amount_invested`.
-    holding_hurdles: Mapping[Holding, Mapping[str, Hurdle]]
-    # Cash in Portfolios with Deposits by currency, for every currency moved in them: what came in less what went out,
-    # on or before each day.
+    # Cash in every Portfolio by currency, for every currency moved in them: Deposits - Purchases - Fees + Sales ±
+    # Conversions, on or before each day.
     cash: Mapping[str, tuple[Decimal, ...]]
     # CZK value of `cash` by currency, for the currencies that can be valued: the Cash x the last known CZK rate on
     # or before the day, for currencies other than CZK.
@@ -122,6 +124,9 @@ class Timeline:
     cash_value: tuple[Decimal | None, ...] | None
     # Why the Cash in each currency left out of `cash_values` couldn't be valued, by currency.
     cash_not_valued: Mapping[str, str]
+    # Every stretch of days a Portfolio's Cash in a currency is negative, by Portfolio, then currency, then day. A
+    # warning, not an error: the value still counts it as negative.
+    negative_cash: tuple[NegativeCash, ...]
 
 
 def timeline(
@@ -137,7 +142,6 @@ def timeline(
     dates = tuple(first + timedelta(days=n) for n in range((today - first).days + 1))
 
     funds = rows.funds()
-    deposited = {d.portfolio for d in rows.deposits}
     bought_or_sold = [*rows.purchases, *rows.sales]
     holdings = sorted({Holding(t.portfolio, funds[t.fund.isin]) for t in bought_or_sold}, key=_holding_order)
     units_held = {
@@ -182,7 +186,7 @@ def timeline(
             holding_currency_values[h] = _zero_when_not_held(units, _times(units, unit_prices[h.isin]))
             czk_per_unit = czk_rates[fund_currencies[h.isin]]
             holding_values[h] = _zero_when_not_held(units, _times(holding_currency_values[h], czk_per_unit))
-    moves = _cash_moves(rows, deposited)
+    moves = _cash_moves(rows)
     cash = _cash(dates, moves)
     cash_values, cash_not_valued = _cash_values(cash, czk_rates)
     whole_portfolio_parts = [*holding_values.values(), *cash_values.values()]
@@ -192,33 +196,32 @@ def timeline(
     }
     every_portfolio = {r.portfolio for r in [*rows.deposits, *bought_or_sold, *rows.fees, *rows.conversions]}
     invested_in = {
-        a: [(d.day, d.amount) for d in rows.deposits if d.portfolio == a] if a in deposited else _paid_in_czk(rows, a)
+        a: [(d.day, d.amount) for d in rows.deposits if d.portfolio == a]
         for a in sorted(every_portfolio, key=_portfolio_order)
     }
     portfolios = {}
+    negative_cash = []
     for a, invested in invested_in.items():
         portfolio_cash = _cash(dates, [m for m in moves if m.portfolio == a])
+        negative_cash += [
+            NegativeCash(a, currency, first, last)
+            for currency, amounts in portfolio_cash.items()
+            for first, last in _negative_stretches(dates, amounts)
+        ]
         parts = [values for h, values in holding_values.items() if h.portfolio == a]
         portfolio_cash_values, portfolio_cash_not_valued = _cash_values(portfolio_cash, czk_rates)
         parts += portfolio_cash_values.values()
         portfolios[a] = PortfolioTimeline(
-            managed=a in deposited,
             amount_invested=_running_total(dates, invested),
             value=_sum(parts) if parts else None,
             hurdles=_hurdles(dates, invested, levels_by_series),
             cash_not_valued=portfolio_cash_not_valued,
         )
     every_investment = [i for invested in invested_in.values() for i in invested]
-    bought_in = {
-        h: [paid for p in rows.purchases if _is_in(p, h) for paid in _paid_for(rows, p)]
-        for h in holdings
-        if h.portfolio not in deposited
-    }
     return Timeline(
         dates=dates,
         amount_invested=_running_total(dates, every_investment),
         portfolios=portfolios,
-        holding_amount_invested={h: _running_total(dates, bought) for h, bought in bought_in.items()},
         fund_names={isin: fund.name for isin, fund in funds.items()},
         units_held=units_held,
         holding_values=holding_values,
@@ -228,11 +231,11 @@ def timeline(
         whole_portfolio_value=_sum(whole_portfolio_parts) if whole_portfolio_parts else None,
         not_valued=not_valued,
         hurdles=_hurdles(dates, every_investment, levels_by_series),
-        holding_hurdles={h: _hurdles(dates, bought, levels_by_series) for h, bought in bought_in.items()},
         cash=cash,
         cash_values=cash_values,
         cash_value=_sum(cash_values.values()) if cash_values else None,
         cash_not_valued=cash_not_valued,
+        negative_cash=tuple(negative_cash),
     )
 
 
@@ -258,9 +261,9 @@ class _CashMove(NamedTuple):
     currency: str
 
 
-def _cash_moves(rows: Rows, portfolios: set[Portfolio]) -> list[_CashMove]:
-    """Every move of Cash in `portfolios`."""
-    moves = (
+def _cash_moves(rows: Rows) -> list[_CashMove]:
+    """Every move of Cash."""
+    return (
         [_CashMove(d.portfolio, d.day, d.amount, d.currency) for d in rows.deposits]
         + [_CashMove(p.portfolio, p.day, -p.amount, p.currency) for p in rows.purchases]
         + [_CashMove(s.portfolio, s.day, s.amount, s.currency) for s in rows.sales]
@@ -268,7 +271,6 @@ def _cash_moves(rows: Rows, portfolios: set[Portfolio]) -> list[_CashMove]:
         + [_CashMove(c.portfolio, c.day, -c.from_amount, c.from_currency) for c in rows.conversions]
         + [_CashMove(c.portfolio, c.day, c.to_amount, c.to_currency) for c in rows.conversions]
     )
-    return [m for m in moves if m.portfolio in portfolios]
 
 
 def _cash(dates: Sequence[date], moves: Sequence[_CashMove]) -> dict[str, tuple[Decimal, ...]]:
@@ -279,30 +281,17 @@ def _cash(dates: Sequence[date], moves: Sequence[_CashMove]) -> dict[str, tuple[
     }
 
 
-def _paid_in_czk(rows: Rows, portfolio: Portfolio) -> list[tuple[date, Decimal]]:
-    """The (day, CZK) of every CZK the Portfolio paid out of Cash: for Purchases, Fees and Conversions."""
-    return (
-        [(p.day, p.amount) for p in rows.purchases if p.portfolio == portfolio and p.currency == CZK]
-        + [(f.day, f.amount) for f in rows.fees if f.portfolio == portfolio and f.currency == CZK]
-        + [(c.day, c.from_amount) for c in rows.conversions if c.portfolio == portfolio and c.from_currency == CZK]
-    )
-
-
-def _paid_for(rows: Rows, purchase: Purchase) -> list[tuple[date, Decimal]]:
-    """The (day, CZK) paid for a Purchase: itself if in CZK, else the Conversion paying for it; and its Fee."""
-    paid = [(purchase.day, purchase.amount)] if purchase.currency == CZK else []
-    paid += [
-        (c.day, c.from_amount)
-        for c in rows.conversions
-        if (c.portfolio, c.source_row_id) == (purchase.portfolio, purchase.source_row_id + CONVERSION_SUFFIX)
-        and c.from_currency == CZK
-    ]
-    paid += [
-        (f.day, f.amount)
-        for f in rows.fees
-        if (f.portfolio, f.source_row_id) == (purchase.portfolio, purchase.source_row_id) and f.currency == CZK
-    ]
-    return paid
+def _negative_stretches(dates: Sequence[date], amounts: Sequence[Decimal]) -> list[tuple[date, date]]:
+    """The (first, last) day of each stretch of consecutive days on which the amount is below zero."""
+    stretches: list[tuple[date, date]] = []
+    for d, amount in zip(dates, amounts, strict=True):
+        if amount >= 0:
+            continue
+        if stretches and stretches[-1][1] == d - timedelta(days=1):
+            stretches[-1] = (stretches[-1][0], d)
+        else:
+            stretches.append((d, d))
+    return stretches
 
 
 def _cash_values(
@@ -326,8 +315,8 @@ def _hurdles(
 
 
 def _hurdle(dates: Sequence[date], invested: Sequence[tuple[date, Decimal]], levels: Sequence[IndexLevel]) -> Hurdle:
-    """`invested` is each Purchase's, Fee's or Deposit's (date, CZK). `levels` must not be empty, and must be one
-    series' levels for consecutive months.
+    """`invested` is each Deposit's (date, CZK). `levels` must not be empty, and must be one series' levels for
+    consecutive months.
     """
     index = dict(zip(dates, _daily_index(dates, levels), strict=True))
     values: list[Decimal | None] = []
