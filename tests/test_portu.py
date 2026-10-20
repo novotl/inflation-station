@@ -175,7 +175,9 @@ def test_unknown_row_type_fails_naming_it_and_imports_nothing(tmp_path: Path) ->
         "",
         "Error: dividend.csv row 3: unknown type 'Dividenda'\n",
     )
-    assert run("--data-dir", tmp_path, "import", JT_EXPORT)[1].startswith("7 Purchases added, 0 already present.\n")
+    assert run("--data-dir", tmp_path, "import", JT_EXPORT)[1].startswith(
+        "7 Deposits added, 0 already present.\n7 Purchases added, 0 already present.\n"
+    )
 
 
 @pytest.mark.parametrize(
@@ -222,7 +224,7 @@ def test_portu_and_jt_exports_import_together(tmp_path: Path) -> None:
     assert run("--data-dir", tmp_path, "import", JT_EXPORT, EXPORT) == (
         0,
         (
-            "2 Deposits added, 0 already present.\n11 Purchases added, 0 already present.\n"
+            "9 Deposits added, 0 already present.\n11 Purchases added, 0 already present.\n"
             "1 Sales added, 0 already present.\n8 Fees added, 0 already present.\n"
             "8 Conversions added, 0 already present.\n"
         ),

@@ -73,7 +73,10 @@ def rates_up_to(month: Path, last: date, copy: Path) -> Path:
 def test_only_currencies_that_purchases_are_priced_in_are_fetched(tmp_path: Path, recorded: dict[str, Path]) -> None:
     czk_only = tmp_path / "czk_only.csv"
     rows = EXPORT.read_text(encoding="utf-8").splitlines(keepends=True)
-    czk_only.write_text("".join(r for r in rows if not any(isin in r for isin in EUR_FUNDS)), encoding="utf-8")
+    # Without the Deposits too, as those paying for EUR funds would have no Purchase to pair with.
+    czk_only.write_text(
+        "".join(r for r in rows if not any(isin in r for isin in EUR_FUNDS) and ";;Vklad" not in r), encoding="utf-8"
+    )
     run("--data-dir", tmp_path, "import", czk_only)
     recorded.clear()  # any request fails the test
 
