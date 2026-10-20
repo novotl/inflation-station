@@ -69,9 +69,7 @@ def _page_data(timeline: Timeline, warnings: Sequence[str]) -> dict[str, Any]:
     """
     benchmark = CSU_CPI if CSU_CPI in timeline.hurdles else next(iter(timeline.hurdles), None)
     hurdle = timeline.hurdles[benchmark] if benchmark else None
-    portfolios = _by_last_value(
-        timeline.portfolios, {a: t.value for a, t in timeline.portfolios.items() if t.value is not None}
-    )
+    portfolios = _by_last_value_of(timeline.portfolios)
     return {
         "asOf": timeline.dates[-1].isoformat(),
         "warnings": list(warnings),
@@ -86,11 +84,9 @@ def _page_data(timeline: Timeline, warnings: Sequence[str]) -> dict[str, Any]:
             "composition": _composition(timeline, portfolios),
             "relative": _relative(timeline.dates, timeline.whole_portfolio_value, timeline.amount_invested, hurdle),
         },
-        "platforms": [
-            _platform_section(timeline, platform, benchmark)
-            for platform in _by_last_value(
-                timeline.platforms, {p: t.value for p, t in timeline.platforms.items() if t.value is not None}
-            )
+        "platformTotals": [
+            _platform_total_section(timeline, platform, benchmark)
+            for platform in _by_last_value_of(timeline.platform_totals)
         ],
         "portfolios": [_portfolio_section(timeline, portfolio, benchmark) for portfolio in portfolios],
         "funds": [
@@ -109,10 +105,10 @@ def _portfolio_section(timeline: Timeline, portfolio: Portfolio, benchmark: str 
     }
 
 
-def _platform_section(timeline: Timeline, platform: Platform, benchmark: str | None) -> dict[str, Any]:
+def _platform_total_section(timeline: Timeline, platform: Platform, benchmark: str | None) -> dict[str, Any]:
     """A Platform total's figures on the last day and its chart, as a Portfolio's."""
     held = [h for h in timeline.units_held if h.portfolio.platform == platform]
-    return _section(timeline, timeline.platforms[platform], held, benchmark) | {
+    return _section(timeline, timeline.platform_totals[platform], held, benchmark) | {
         "key": str(platform),
         "name": PLATFORM_NAMES[platform],
     }
@@ -121,7 +117,7 @@ def _platform_section(timeline: Timeline, platform: Platform, benchmark: str | N
 def _section(
     timeline: Timeline, series: PortfolioTimeline, held: Sequence[Holding], benchmark: str | None
 ) -> dict[str, Any]:
-    """The figures and charts of a Portfolio or Platform total holding `held`."""
+    """The figures and charts of a Portfolio or Platform total whose Holdings are `held`."""
     hurdle = series.hurdles[benchmark] if benchmark else None
     # With no value, nothing in it can be valued: each of its funds, and its Cash in every currency.
     missing = (["funds"] if held else []) + (["Cash"] if series.cash_not_valued else [])
@@ -154,7 +150,6 @@ def _holding_section(timeline: Timeline, holding: Holding) -> dict[str, Any]:
     currency = timeline.fund_currencies.get(isin, CZK)
     currency_value = _last(timeline.holding_currency_values.get(holding))
     return {
-        "key": _key(holding),
         "isin": isin,
         "name": timeline.fund_names[isin],
         "portfolio": portfolio_name(holding.portfolio),
@@ -242,6 +237,11 @@ def _by_last_value[K](every: Iterable[K], values: Mapping[K, Sequence[Decimal | 
     return sorted(every, key=key)
 
 
+def _by_last_value_of[K](series: Mapping[K, PortfolioTimeline]) -> list[K]:
+    """`_by_last_value` of each Portfolio's or Platform total's value."""
+    return _by_last_value(series, {k: t.value for k, t in series.items() if t.value is not None})
+
+
 def _line(
     dates: Sequence[date], values: Sequence[Decimal | None], name: str, meta: str | None = None, **extra: object
 ) -> dict[str, Any]:
@@ -293,10 +293,9 @@ def portfolio_name(portfolio: Portfolio) -> str:
     return f"{PLATFORM_NAMES[portfolio.platform]} · {portfolio.name}"
 
 
-def _key(of: Portfolio | Holding) -> str:
-    """A key the page picks a Portfolio or Holding by: unique, as its parts never contain a newline."""
-    portfolio = of.portfolio if isinstance(of, Holding) else of
-    return "\n".join([portfolio.platform, portfolio.key, *([of.isin] if isinstance(of, Holding) else [])])
+def _key(portfolio: Portfolio) -> str:
+    """A key the page picks a Portfolio by: unique, as its parts never contain a newline."""
+    return f"{portfolio.platform}\n{portfolio.key}"
 
 
 def _ratio(values: Sequence[Decimal | None], bases: Sequence[Decimal | None]) -> list[Decimal | None]:

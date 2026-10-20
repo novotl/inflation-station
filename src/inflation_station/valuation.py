@@ -96,7 +96,7 @@ class Timeline:
     # Every Portfolio with imported rows, by Portfolio.
     portfolios: Mapping[Portfolio, PortfolioTimeline]
     # The Platform total of every Platform with imported rows, by Platform.
-    platforms: Mapping[Platform, PortfolioTimeline]
+    platform_totals: Mapping[Platform, PortfolioTimeline]
     # The latest fund name by ISIN, for every fund purchased or held.
     fund_names: Mapping[str, str]
     # Units held by Holding, for every fund bought or sold in each Portfolio: its Purchases' units less its Sales', on
@@ -227,7 +227,7 @@ def timeline(
         dates=dates,
         amount_invested=_running_total(dates, every_investment),
         portfolios=portfolios,
-        platforms=_platform_totals(dates, invested_in, portfolios, levels_by_series),
+        platform_totals=_platform_totals(dates, invested_in, portfolios, levels_by_series),
         fund_names={isin: fund.name for isin, fund in funds.items()},
         units_held=units_held,
         holding_values=holding_values,

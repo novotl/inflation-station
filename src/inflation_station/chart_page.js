@@ -109,7 +109,7 @@ function renderDashboard(el) {
     ${P.hurdles.map(h => kpi(`vs inflation (${h.name})`, signed(minus(P.value, h.value), czk(minus(P.value, h.value))),
       `${signed(vs(P.value, h.value), pct(vs(P.value, h.value)))} <span class="muted">· hurdle ${czk(h.value)}</span>`)).join("")}
     </div><div class="card"><div id="dashboard-chart"></div></div>
-    <h2>Platforms</h2><div class="portfolio-cards platforms"></div>
+    <h2>Platform totals</h2><div class="portfolio-cards platform-totals"></div>
     <h2>Portfolios</h2><div class="portfolio-cards portfolios"></div>
     <h2>Funds</h2><div class="card table-card"><table class="funds"><thead><tr><th>Fund</th><th>Priced in</th><th>Value</th>
     <th>Units</th></tr></thead><tbody></tbody></table></div>`;
@@ -127,7 +127,7 @@ function renderDashboard(el) {
     cards.append(card);
     czkChart(card.lastElementChild, a.chart, 360);
   };
-  D.platforms.forEach(a => section(el.querySelector(".platforms"), a));
+  D.platformTotals.forEach(a => section(el.querySelector(".platform-totals"), a));
   D.portfolios.forEach(a => section(el.querySelector(".portfolios"), a));
   const tbody = el.querySelector("tbody");
   D.funds.forEach(f => {
@@ -155,12 +155,12 @@ function renderRelative(el) {
       <div class="kpi"><div class="label">Whole Portfolio vs invested</div><div class="big ${cls(nominal)}">${pct(nominal)}</div>
         <div class="sub muted">${czk(P.value)} vs ${czk(P.invested)}</div></div></div>
     <div class="card"><div id="relative-chart"></div></div>
-    <h2>Per Platform <span class="muted" style="font-size:14px;font-weight:normal">(same scale everywhere)</span></h2>
-    <div class="grid platforms"></div>
+    <h2>Per Platform total <span class="muted" style="font-size:14px;font-weight:normal">(same scale everywhere)</span></h2>
+    <div class="grid platform-totals"></div>
     <h2>Per Portfolio</h2>
     <div class="grid portfolios"></div>`;
   plot("relative-chart", P.relative, { yaxis: { tickformat: "+.0%", zeroline: false }, shapes: relativeShapes(), height: 380, margin: { t: 10 } }, { pct: true });
-  const all = [...D.platforms, ...D.portfolios].flatMap(a => a.relative.flatMap(t => t.y)).filter(y => y != null);
+  const all = [...D.platformTotals, ...D.portfolios].flatMap(a => a.relative.flatMap(t => t.y)).filter(y => y != null);
   const range = all.length ? [Math.min(...all) - .05, Math.max(...all) + .05] : undefined;
   const cell = (grid, name, item, sub) => {
     const now = D.benchmark ? vs(item.value, item.benchmarkHurdle) : vs(item.value, item.invested);
@@ -174,7 +174,7 @@ function renderRelative(el) {
     plot(chart, item.relative, { yaxis: { tickformat: "+.0%", range, zeroline: false }, shapes: relativeShapes(), showlegend: false,
       height: 220, margin: { t: 6, b: 30, l: 50, r: 10 } }, { pct: true });
   };
-  D.platforms.forEach(a => cell(el.querySelector(".grid.platforms"), a.name, a, czk(a.value)));
+  D.platformTotals.forEach(a => cell(el.querySelector(".grid.platform-totals"), a.name, a, czk(a.value)));
   D.portfolios.forEach(a => cell(el.querySelector(".grid.portfolios"), a.name, a, czk(a.value)));
 }
 
@@ -185,7 +185,7 @@ function renderStrip(el) {
   const standing = (value, hurdle, invested) => D.benchmark ? `${pct(vs(value, hurdle))} vs ${esc(D.benchmark)}` : `${pct(vs(value, invested))} vs invested`;
   const items = [{ key: "", name: "Whole Portfolio", value: P.value, rel: D.benchmark ? vs(P.value, P.benchmarkHurdle) : vs(P.value, P.invested),
     label: standing(P.value, P.benchmarkHurdle, P.invested) }]
-    .concat([["p", D.platforms], ["a", D.portfolios]].flatMap(([prefix, sections]) => sections.map(a => ({ key: prefix + a.key, a,
+    .concat([["p", D.platformTotals], ["a", D.portfolios]].flatMap(([prefix, sections]) => sections.map(a => ({ key: prefix + a.key, a,
       name: a.name, value: a.value, rel: D.benchmark ? vs(a.value, a.benchmarkHurdle) : vs(a.value, a.invested),
       label: a.notValued ? "not valued" : standing(a.value, a.benchmarkHurdle, a.invested) }))));
   const height = () => Math.max(500, innerHeight - 300);

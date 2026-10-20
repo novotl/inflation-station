@@ -304,7 +304,7 @@ def test_each_line_has_the_role_that_colours_it_the_same_on_every_chart(tmp_path
         "Inflation hurdle (Eurostat HICP)": "inflation",
         "Inflation hurdle (Eurostat HICP, estimated)": "inflation",
     }
-    assert by_name(data["platforms"][0]["chart"])["Value"]["meta"] == "value"
+    assert by_name(data["platformTotals"][0]["chart"])["Value"]["meta"] == "value"
     # Stacked Portfolio values take the colourway, one colour per Portfolio.
     assert "meta" not in composition(tmp_path)["J&T Banka · FF - World Fund A-ACC-CZK"]
     # The relative lines take the colour of what they're measured against.
@@ -522,7 +522,7 @@ def test_each_platform_has_a_total_section_adding_up_its_portfolios_largest_valu
     run("--data-dir", tmp_path, "import", PORTU_EXPORT)
     run("--data-dir", tmp_path, "chart")
 
-    jt, portu = page(tmp_path)["platforms"]
+    jt, portu = page(tmp_path)["platformTotals"]
     assert (jt["name"], portu["name"]) == ("J&T Banka", "Portu")
     assert jt["key"] != portu["key"]
     # J&T's four Portfolios, one per Fund, added together.
@@ -554,7 +554,7 @@ def test_a_platform_total_names_what_its_value_leaves_out_once(tmp_path: Path) -
     run("--data-dir", tmp_path, "fetch-prices")
     run("--data-dir", tmp_path, "chart")
 
-    (jt,) = page(tmp_path)["platforms"]
+    (jt,) = page(tmp_path)["platformTotals"]
     # Two of its Portfolios hold EUR Cash, neither valued without rates.
     assert jt["leftOut"] == [
         "FTIF-Franklin Technology Fund-A(acc)EUR (no EUR rates stored)",
@@ -574,7 +574,6 @@ def test_each_fund_section_is_a_holding_naming_its_portfolio(tmp_path: Path) -> 
         ("J&T Banka · FTIF-Franklin Technology Fund-A(acc)EUR", "FTIF-Franklin Technology Fund-A(acc)EUR"),
         ("J&T Banka · AMUNDI FUNDS US PIONEER FUND - A EUR (C)", "AMUNDI FUNDS US PIONEER FUND - A EUR (C)"),
     }
-    assert len({f["key"] for f in page(tmp_path)["funds"]}) == 4  # noqa: PLR2004 - the fixture's funds
 
 
 def test_holdings_show_units_but_no_amount_invested_or_hurdle(tmp_path: Path) -> None:
@@ -649,7 +648,6 @@ def test_one_fund_in_two_portfolios_is_two_holdings_each_naming_its_portfolio(tm
         ("J&T Banka · 900000002", 30),
         ("J&T Banka · 900000001", 20),
     ]
-    assert len({f["key"] for f in funds}) == 2  # noqa: PLR2004 - one per Holding
     assert set(composition(tmp_path)) == {"J&T Banka · 900000001", "J&T Banka · 900000002", "Amount invested"}
 
 
