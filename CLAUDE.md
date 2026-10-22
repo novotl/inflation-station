@@ -6,6 +6,8 @@ When reporting information to me, be extremely concise and sacrifice grammar for
 
 Run `make check` and fix what fails.
 
+Write the PR title and body to `.github/pull_request_template.md`, not the `pr` skill's layout.
+
 ## Agent skills
 
 ### Issue tracker

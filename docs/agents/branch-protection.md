@@ -45,9 +45,7 @@ Rules match command text, so they stop the forms an agent normally writes, not e
 
 The reviewer leaves these PRs for a human to merge, with a comment saying so:
 
-- `.claude/**`, `.github/**`, `CLAUDE.md`, `.pre-commit-config.yaml`
-- any `uv.lock` change
-- changes to `dependencies`, `dependency-groups` or `build-system` in `pyproject.toml`
+- `.claude/**`, `.github/**`, `CLAUDE.md`, `.pre-commit-config.yaml`, `pyproject.toml`
 
 A PR that touches these can weaken the guardrails themselves, so the owner reviews and merges it. This list is canonical; `.claude/skills/review-pr/SKILL.md` repeats it and must match.
 
