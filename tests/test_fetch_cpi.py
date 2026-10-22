@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from click.testing import CliRunner
-from conftest import CPI_CSV, CSU, EUROSTAT, HICP_JSON
+from recorder import CPI_CSV, CSU, EUROSTAT, HICP_JSON
 from test_chart import whole_portfolio_chart
 
 from inflation_station.cli import main

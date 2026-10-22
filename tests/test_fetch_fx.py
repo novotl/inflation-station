@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from click.testing import CliRunner
-from conftest import EUR_MONTHS, EUR_RATES
+from recorder import EUR_MONTHS, EUR_RATES
 
 from inflation_station import clock
 from inflation_station.cli import main

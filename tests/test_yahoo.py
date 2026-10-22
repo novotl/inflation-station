@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-from conftest import CHART
+from recorder import CHART
 
 from inflation_station import yahoo
 from inflation_station.errors import InflationStationError
