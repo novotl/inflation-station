@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from plotly.offline import get_plotlyjs
 
 from inflation_station.domain import Platform
-from inflation_station.price_index import CSU_CPI, EUROSTAT_HICP, NAMES
+from inflation_station.price_indexes import CSU_CPI, EUROSTAT_HICP, NAMES
 from inflation_station.valuation import CZK, Holding
 
 if TYPE_CHECKING:

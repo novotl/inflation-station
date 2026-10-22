@@ -11,7 +11,7 @@ from typing import Any
 
 from inflation_station import web
 from inflation_station.errors import InflationStationError
-from inflation_station.price_index import EUROSTAT_HICP, IndexLevel
+from inflation_station.price_indexes.index_level import EUROSTAT_HICP, IndexLevel
 
 URL = (
     "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_minr"
