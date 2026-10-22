@@ -511,7 +511,10 @@ def test_pdf_with_a_blank_page_fails(tmp_path: Path) -> None:
     assert run("--data-dir", tmp_path, "import", blank) == (
         1,
         "",
-        f"Error: cannot read {blank}: missing '/Contents'\n",
+        (
+            "Error: blank.pdf is not an INVESTIKA statement: "
+            "its title is neither 'Pohyby na peněžním účtu' nor 'Transakce na majetkovém účtu'\n"
+        ),
     )
 
 

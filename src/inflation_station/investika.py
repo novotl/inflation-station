@@ -77,9 +77,6 @@ def read_pdf(path: Path) -> Statement:
     except (OSError, PyPdfError) as e:
         msg = f"cannot read {path}: {e}"
         raise InflationStationError(msg) from e
-    except KeyError as e:  # pypdf's layout mode, on a page without a content stream, such as a blank page
-        msg = f"cannot read {path}: missing {e}"
-        raise InflationStationError(msg) from e
     return statement(path.name, lines)
 
 
