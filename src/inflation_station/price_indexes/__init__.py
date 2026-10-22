@@ -22,7 +22,7 @@ class PriceIndex:
 
 def price_indexes(stored: Iterable[IndexLevel]) -> dict[str, PriceIndex]:
     """Each series by its key, fetching levels that continue `stored` (the levels already stored, of any series)."""
-    stored = list(stored)
+    stored = list(stored)  # read now, as the fetch may run after a one-shot iterable is used up
     return {
         CSU_CPI: PriceIndex(NAMES[CSU_CPI], lambda: csu.continuing(csu.cpi(), stored)),
         EUROSTAT_HICP: PriceIndex(NAMES[EUROSTAT_HICP], eurostat.hicp),
