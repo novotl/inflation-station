@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from inflation_station import web
 from inflation_station.errors import InflationStationError
-from inflation_station.price_index import CSU_CPI, IndexLevel
+from inflation_station.price_indexes.index_level import CSU_CPI, IndexLevel
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence

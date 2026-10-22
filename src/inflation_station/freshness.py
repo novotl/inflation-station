@@ -3,13 +3,13 @@
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
-from inflation_station.price_index import NAMES
+from inflation_station.price_indexes import NAMES
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from inflation_station.fx_rate import FxRate
-    from inflation_station.price_index import IndexLevel
+    from inflation_station.price_indexes import IndexLevel
     from inflation_station.price_sources import FundPrice
 
 # Business days (Monday to Friday) after its last point before a daily series is out of date: enough for a holiday
