@@ -48,13 +48,15 @@ jobs:
         run: make cov
 
       - name: Coverage comment
-        if: always() && steps.cov.outcome != 'skipped'
+        if: always() && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           OUTCOME: ${{ steps.cov.outcome }}
         run: |
-          if [[ ! -f diff-cover.md ]]; then
+          if [[ $OUTCOME == skipped ]]; then
+            body="**Diff coverage** not run: an earlier step failed. See the CI log."
+          elif [[ ! -f diff-cover.md ]]; then
             body="**Diff coverage** not computed: the tests or the total coverage floor failed. See the CI log."
           elif [[ $OUTCOME == success ]]; then
             body="**Diff coverage**: all changed lines covered."
