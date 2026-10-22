@@ -32,7 +32,7 @@ Run the `mattpocock-skills:code-review` skill with these inputs, so it never has
 - **Spec**: the issue or PR body from step 1.
 - **Standards**: the files from step 1.
 
-Its Standards and Spec reports cover only part of what blocks a merge. Then read the diff yourself for correctness bugs, missing tests and security problems. For missing tests, read CI's diff coverage comment on the PR (`gh pr view <n> --comments`, the comment starting `# Diff Coverage` or `**Diff coverage**`): it lists each changed file's lines and branches no test covers. Check each `# pragma: no cover` in the diff is justified.
+Its Standards and Spec reports cover only part of what blocks a merge. Then read the diff yourself for correctness bugs, missing tests and security problems. For missing tests, read CI's diff coverage comment on the PR (`gh pr view <n> --comments`, the comment starting `# Diff Coverage` or `**Diff coverage**`): it lists each changed file's lines and branches no test covers. Check each `# pragma: no cover` in the diff is justified. Check every added line of docs and comments for **duplicated config**: a value, flag, target or threshold that a config file (`pyproject.toml`, `Makefile`, `.github/workflows/`, `.pre-commit-config.yaml`) already owns.
 
 Sort every finding, from the skill and your own pass, into one of two buckets.
 
@@ -43,6 +43,7 @@ Sort every finding, from the skill and your own pass, into one of two buckets.
 - Missing tests for new behaviour, or tests that don't exercise the behaviour they name.
 - A security problem: secrets, credentials or files from `data/` committed, unsafe input handling.
 - A documented standard or ADR violated without the PR saying why.
+- Duplicated config: the copy drifts once the source changes. E.g. a README stating a 95% coverage floor duplicates `fail_under = 95` in `pyproject.toml`. Fix: point to the owning file and setting, or drop the copy.
 
 **Non-blocking**: naming, style the linters don't enforce, small refactors, follow-up ideas, and the skill's baseline smells (they are judgement calls). Report them; they never stop a merge.
 

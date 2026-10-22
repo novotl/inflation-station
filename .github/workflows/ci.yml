@@ -11,11 +11,13 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   ci:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # coverage comment
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -57,7 +59,7 @@ jobs:
           if [[ $OUTCOME == skipped ]]; then
             body="**Diff coverage** not run: an earlier step failed. See the CI log."
           elif [[ ! -f diff-cover.md ]]; then
-            body="**Diff coverage** not computed: the tests or the total coverage floor failed. See the CI log."
+            body="**Diff coverage** not computed: \`make cov\` failed before diff-cover wrote its report. See the CI log."
           elif [[ $OUTCOME == success ]]; then
             body="**Diff coverage**: all changed lines covered."
           else
