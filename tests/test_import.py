@@ -503,6 +503,7 @@ def test_broken_pdf_fails(tmp_path: Path) -> None:
 
 
 def test_pdf_with_a_blank_page_fails(tmp_path: Path) -> None:
+    # Guards against pypdf changing blank-page behaviour again (<6.21 raised KeyError).
     blank = tmp_path / "blank.pdf"
     writer = PdfWriter()
     writer.add_blank_page(width=595, height=842)
