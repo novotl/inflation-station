@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
     from inflation_station.domain import Fund, Platform, Portfolio, Purchase, Rows, Sale
     from inflation_station.fx_rate import FxRate
-    from inflation_station.price_index import IndexLevel
+    from inflation_station.price_indexes import IndexLevel
     from inflation_station.price_sources import FundPrice
 
 NO_PRICES = "no prices stored"
