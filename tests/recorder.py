@@ -2,11 +2,12 @@
 
 from pathlib import Path
 
-CONSEQ = Path(__file__).parent / "fixtures" / "conseq"
-CNB = Path(__file__).parent / "fixtures" / "cnb"
-CSU = Path(__file__).parent / "fixtures" / "csu"
-EUROSTAT = Path(__file__).parent / "fixtures" / "eurostat"
-YAHOO = Path(__file__).parent / "fixtures" / "yahoo"
+FIXTURES = Path(__file__).parent / "fixtures"
+CONSEQ = FIXTURES / "conseq"
+CNB = FIXTURES / "cnb"
+CSU = FIXTURES / "csu"
+EUROSTAT = FIXTURES / "eurostat"
+YAHOO = FIXTURES / "yahoo"
 FUND_PAGE = "https://www.conseq.cz/investice/prehled-fondu/"
 PRICE_HISTORY = "https://www.conseq.cz/Conseq/Pricehist.ashx?productid={}&culture=cs-CZ"
 EUR_RATES = "https://api.cnb.cz/cnbapi/exrates/daily-currency-month?currency=EUR&yearMonth={}&lang=EN"

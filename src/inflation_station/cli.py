@@ -8,9 +8,8 @@ from inflation_station.domain import Rows
 from inflation_station.errors import InflationStationError
 from inflation_station.freshness import out_of_date
 from inflation_station.imports import read_files
-from inflation_station.price_check import price_warnings
 from inflation_station.price_index import CSU_CPI, EUROSTAT_HICP, NAMES
-from inflation_station.price_sources import price_sources
+from inflation_station.price_sources import price_sources, price_warnings
 from inflation_station.settings import Settings
 from inflation_station.store import Store, database_exists
 from inflation_station.valuation import CZK, NO_PRICES, Timeline, no_rates, timeline

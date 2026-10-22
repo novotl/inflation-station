@@ -13,7 +13,7 @@ from inflation_station import clock
 from inflation_station.chart import write_chart
 from inflation_station.cli import main
 from inflation_station.domain import Deposit, Fund, Platform, Portfolio, Purchase, Rows
-from inflation_station.fund_price import FundPrice
+from inflation_station.price_sources import FundPrice
 from inflation_station.store import Store
 from inflation_station.valuation import timeline
 

@@ -8,8 +8,8 @@ if TYPE_CHECKING:
     from datetime import date
 
     from inflation_station.domain import Rows
-    from inflation_station.fund_price import FundPrice
     from inflation_station.price_sources import PriceSource
+    from inflation_station.price_sources.fund_price import FundPrice
 
 # The largest difference from the stored price, as a fraction of it, that passes without a warning: 0.5 %.
 # A spot check found the export within 0.005 % of Conseq, so anything above this is worth a look.

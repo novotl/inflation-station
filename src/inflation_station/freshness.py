@@ -8,9 +8,9 @@ from inflation_station.price_index import NAMES
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
-    from inflation_station.fund_price import FundPrice
     from inflation_station.fx_rate import FxRate
     from inflation_station.price_index import IndexLevel
+    from inflation_station.price_sources import FundPrice
 
 # Business days (Monday to Friday) after its last point before a daily series is out of date: enough for a holiday
 # or a late publication, short enough to notice a forgotten fetch within a week or so.

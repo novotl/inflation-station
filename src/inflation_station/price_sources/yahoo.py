@@ -10,7 +10,7 @@ from urllib.parse import quote
 from inflation_station import clock, web
 from inflation_station.currency import code as currency_code
 from inflation_station.errors import InflationStationError
-from inflation_station.fund_price import FundPrice
+from inflation_station.price_sources.fund_price import FundPrice
 
 # The hand-edited mapping from ISIN to Yahoo Finance ticker.
 TICKERS = Path(__file__).parent / "yahoo_funds.toml"
