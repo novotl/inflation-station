@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from inflation_station.freshness import out_of_date
 from inflation_station.fx_rate import FxRate
-from inflation_station.price_index import CSU_CPI, EUROSTAT_HICP, IndexLevel
+from inflation_station.price_indexes import CSU_CPI, EUROSTAT_HICP, IndexLevel
 from inflation_station.price_sources import FundPrice
 
 FUND = "LU1756523376"

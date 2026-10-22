@@ -1,10 +1,9 @@
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 from click.testing import CliRunner
-from recorder import CPI_CSV, CSU, EUROSTAT, HICP_JSON
+from recorder import CPI_CSV, CSU, EUROSTAT, FIXTURES, HICP_JSON
 from test_chart import whole_portfolio_chart
 
 from inflation_station.cli import main
@@ -12,8 +11,9 @@ from inflation_station.errors import InflationStationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
-EXPORT = Path(__file__).parent / "fixtures" / "jt_export.csv"
+EXPORT = FIXTURES / "jt_export.csv"
 # The month-on-month changes of January 2020 to May 2021, chained from December 2019; and Eurostat's levels of
 # December 2019 to May 2021.
 RECORDED_MONTHS = 18
