@@ -9,6 +9,7 @@ build/
 .coverage
 coverage.xml
 htmlcov/
+diff-cover.md
 
 # Project data (downloads, caches, exports) lives here and is never committed.
 data/

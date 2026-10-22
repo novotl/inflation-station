@@ -7,11 +7,16 @@ Track how your investments perform against inflation.
 Requires [uv](https://docs.astral.sh/uv/).
 
 ```sh
-uv sync                        # create .venv and install dev dependencies
-uv run pre-commit install      # enable git hooks
-uv run pre-commit run --all-files
-uv run pytest                  # tests + coverage report
+make install   # create .venv with dev dependencies and enable git hooks
+make lint      # run every pre-commit hook on all files
+make test      # tests + coverage report; fails below 95 % total (branch) coverage
+make cov       # tests, coverage.xml, and fail on any changed line or branch not covered vs origin/main
+make htmlcov   # browsable coverage report in htmlcov/
+make check     # lint + test + cov: everything CI runs; run it before opening a PR
+make build     # sdist and wheel into dist/
 ```
+
+On a pull request CI runs `make cov` and posts its report as a PR comment, updated on each push: every changed line must be covered by tests. A line that can't be meaningfully tested can opt out with `# pragma: no cover`, visible in the diff for review.
 
 ### Database migrations
 

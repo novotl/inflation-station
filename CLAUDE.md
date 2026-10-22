@@ -2,6 +2,10 @@
 
 When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 
+## Before opening a PR
+
+Run `make check` (lint, tests, and diff coverage vs `origin/main`: every changed line covered) and fix what fails. CI runs the same targets.
+
 ## Agent skills
 
 ### Issue tracker

@@ -11,12 +11,15 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0 # diff-cover diffs against origin/main
 
       - uses: astral-sh/setup-uv@v10.3.0
         with:
@@ -30,13 +33,35 @@ jobs:
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Install dependencies
-        run: uv sync --locked
+        run: make install
 
-      - name: Pre-commit checks
-        run: uv run pre-commit run --all-files --show-diff-on-failure
+      - name: Lint
+        run: make lint
 
       - name: Tests
-        run: uv run pytest
+        if: github.event_name != 'pull_request'
+        run: make test
+
+      - name: Tests and diff coverage
+        id: cov
+        if: github.event_name == 'pull_request'
+        run: make cov
+
+      - name: Coverage comment
+        if: always() && steps.cov.outcome != 'skipped'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          OUTCOME: ${{ steps.cov.outcome }}
+        run: |
+          if [[ ! -f diff-cover.md ]]; then
+            body="**Diff coverage** not computed: the tests or the total coverage floor failed. See the CI log."
+          elif [[ $OUTCOME == success ]]; then
+            body="**Diff coverage**: all changed lines covered."
+          else
+            body="$(cat diff-cover.md)"
+          fi
+          gh pr comment "$PR" --edit-last --create-if-none --body "$body"
 
       - name: Build
-        run: uv build
+        run: make build

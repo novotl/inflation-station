@@ -32,7 +32,7 @@ Run the `mattpocock-skills:code-review` skill with these inputs, so it never has
 - **Spec**: the issue or PR body from step 1.
 - **Standards**: the files from step 1.
 
-Its Standards and Spec reports cover only part of what blocks a merge. Then read the diff yourself for correctness bugs, missing tests and security problems.
+Its Standards and Spec reports cover only part of what blocks a merge. Then read the diff yourself for correctness bugs, missing tests and security problems. For missing tests, read CI's diff coverage comment on the PR (`gh pr view <n> --comments`, the comment starting `# Diff Coverage` or `**Diff coverage**`): it lists each changed file's lines and branches no test covers. Check each `# pragma: no cover` in the diff is justified.
 
 Sort every finding, from the skill and your own pass, into one of two buckets.
 
