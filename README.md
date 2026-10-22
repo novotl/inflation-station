@@ -7,11 +7,11 @@ Track how your investments perform against inflation.
 Requires [uv](https://docs.astral.sh/uv/).
 
 ```sh
-uv sync                        # create .venv and install dev dependencies
-uv run pre-commit install      # enable git hooks
-uv run pre-commit run --all-files
-uv run pytest                  # tests + coverage report
+make install   # create .venv with dev dependencies and enable git hooks
+make           # list the other targets
 ```
+
+Run `make check` before opening a PR. It fails below the total coverage floor (`fail_under` in `pyproject.toml`) or on a changed line or branch that no test covers. On a pull request CI posts the diff coverage report as a PR comment, updated on each push. A line that can't be meaningfully tested can opt out with `# pragma: no cover`, visible in the diff for review.
 
 ### Database migrations
 

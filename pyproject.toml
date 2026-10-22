@@ -23,6 +23,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "deptry>=0.25.1",
+    "diff-cover>=10.6.0",
     "fpdf2>=2.8.9",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
@@ -64,6 +65,12 @@ testpaths = ["tests"]
 addopts = ["--strict-markers", "--strict-config", "--cov=inflation_station", "--cov-report=term-missing"]
 xfail_strict = true
 filterwarnings = ["error"]
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+fail_under = 95
 
 [tool.alembic]
 # For `uv run alembic ...` during development; the app configures Alembic itself (store.migrate).
