@@ -1,17 +1,17 @@
 import json
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-from conftest import CHART
+from recorder import CHART, YAHOO
 
-from inflation_station import yahoo
 from inflation_station.errors import InflationStationError
+from inflation_station.price_sources import yahoo
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
 SXR7 = "IE00B53QG562"
 SXR7_CHART = CHART.format("SXR7.DE")
@@ -83,7 +83,7 @@ def test_an_error_from_yahoo_fails_naming_the_chart(recorded: dict[str, Path], t
 
 
 def test_a_response_that_is_not_a_chart_fails_naming_its_url(recorded: dict[str, Path]) -> None:
-    recorded[SXR7_CHART] = Path(__file__).parent / "fixtures" / "yahoo" / "README.md"
+    recorded[SXR7_CHART] = YAHOO / "README.md"
 
     with pytest.raises(InflationStationError, match=r"cannot read the Yahoo Finance chart .*SXR7\.DE"):
         yahoo.price_history(SXR7, "SXR7.DE")

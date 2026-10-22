@@ -15,9 +15,9 @@ from inflation_station.domain import (
     Rows,
     Sale,
 )
-from inflation_station.fund_price import FundPrice
 from inflation_station.fx_rate import FxRate
 from inflation_station.price_index import CSU_CPI, IndexLevel
+from inflation_station.price_sources import FundPrice
 from inflation_station.valuation import NO_PRICES, Holding, NegativeCash, timeline
 
 if TYPE_CHECKING:

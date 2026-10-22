@@ -14,7 +14,7 @@ from urllib.parse import urljoin
 from inflation_station import web
 from inflation_station.currency import code as currency_code
 from inflation_station.errors import InflationStationError
-from inflation_station.fund_price import FundPrice
+from inflation_station.price_sources.fund_price import FundPrice
 
 # The hand-edited mapping from ISIN to Conseq fund page.
 FUND_PAGES = Path(__file__).parent / "conseq_funds.toml"

@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 
 from inflation_station.domain import Conversion, Deposit, Fee, Fund, Platform, Portfolio, Purchase, Rows, Sale
 from inflation_station.errors import InflationStationError
-from inflation_station.fund_price import FundPrice
 from inflation_station.fx_rate import FxRate
+from inflation_station.price_sources import FundPrice
 from inflation_station.store import Added, DepositRecord, Store, database_url, engine
 
 if TYPE_CHECKING:

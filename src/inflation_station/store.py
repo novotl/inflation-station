@@ -25,9 +25,9 @@ from sqlalchemy.types import TypeDecorator
 
 from inflation_station.domain import Conversion, Deposit, Fee, Fund, Platform, Portfolio, Purchase, Rows, Sale
 from inflation_station.errors import InflationStationError
-from inflation_station.fund_price import FundPrice
 from inflation_station.fx_rate import FxRate
 from inflation_station.price_index import IndexLevel
+from inflation_station.price_sources import FundPrice
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable

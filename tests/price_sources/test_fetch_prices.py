@@ -2,18 +2,21 @@ import re
 import zipfile
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import ANY
 
 import pytest
 from click.testing import CliRunner
+from recorder import FIXTURES
 from test_chart import composition, page
 
-from inflation_station import conseq, yahoo
 from inflation_station.cli import main
+from inflation_station.price_sources import conseq, yahoo
 from inflation_station.store import Store
 
-FIXTURES = Path(__file__).parent / "fixtures"
+if TYPE_CHECKING:
+    from pathlib import Path
+
 EXPORT = FIXTURES / "jt_export.csv"
 PORTU_EXPORT = FIXTURES / "portu_export.csv"
 FF_WORLD_PAGE = "https://www.conseq.cz/investice/prehled-fondu/ff-world-fund-czk"

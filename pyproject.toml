@@ -62,6 +62,7 @@ error-on-warning = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 addopts = ["--strict-markers", "--strict-config", "--cov=inflation_station", "--cov-report=term-missing"]
 xfail_strict = true
 filterwarnings = ["error"]

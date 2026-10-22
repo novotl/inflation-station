@@ -45,8 +45,8 @@ Every Platform's rows are valued the same way (see [ADR 0002](docs/adr/0002-amou
 
 `fetch-prices` downloads the prices of every fund purchased or held, each from whichever of two hand-edited files lists its ISIN:
 
-- `src/inflation_station/conseq_funds.toml`, for funds Conseq sells: the URL of the fund's page on [conseq.cz](https://www.conseq.cz/investice/prehled-fondu).
-- `src/inflation_station/yahoo_funds.toml`, for exchange-traded funds: the fund's [Yahoo Finance](https://finance.yahoo.com) ticker, e.g. `SXR7.DE` (Xetra, in EUR) or `CSPX.L` (LSE, in USD). An ETF is listed on several exchanges, often in different currencies; pick the listing in the currency it was bought in. Yahoo's daily close is the price, up to yesterday: today's is left out, as the market may still be open.
+- `src/inflation_station/price_sources/conseq_funds.toml`, for funds Conseq sells: the URL of the fund's page on [conseq.cz](https://www.conseq.cz/investice/prehled-fondu).
+- `src/inflation_station/price_sources/yahoo_funds.toml`, for exchange-traded funds: the fund's [Yahoo Finance](https://finance.yahoo.com) ticker, e.g. `SXR7.DE` (Xetra, in EUR) or `CSPX.L` (LSE, in USD). An ETF is listed on several exchanges, often in different currencies; pick the listing in the currency it was bought in. Yahoo's daily close is the price, up to yesterday: today's is left out, as the market may still be open.
 
 A fund in neither file, or in both, fails the command, naming it. After fetching, it compares the unit price of each Purchase and Sale with the fetched price on its date and warns when they are in different currencies or differ by more than 0.5 % of the fetched price, naming where that price comes from; the warning changes nothing and the fetched price is what the chart uses.
 
