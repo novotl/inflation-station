@@ -82,7 +82,7 @@ Check in this order; the first match wins.
 
 1. **Fundamentally wrong** (solves the wrong problem, superseded, or the approach can't be fixed by revision): `gh pr close <n> --comment "<why, and what to do instead>"`. Reserve this for PRs no revision can save; everything else is blocking findings.
 2. **Blocking findings**: stop. The review from step 3 is the hand-off to the author.
-3. **Guardrail path touched**: any changed file matches `.claude/**`, `.github/**`, `CLAUDE.md`, `.pre-commit-config.yaml`, or the PR changes `uv.lock` (any change) or `dependencies`, `dependency-groups`, `build-system` in `pyproject.toml`. This list mirrors "Guardrail paths" in `docs/agents/branch-protection.md`, which is canonical. Check with `gh pr view <n> --json files --jq '.files[].path'`. Comment `A human must merge this PR: it touches guardrail files (<list>).` and stop.
+3. **Guardrail path touched**: any changed file matches `.claude/**`, `.github/**`, `CLAUDE.md`, `.pre-commit-config.yaml`, `pyproject.toml`. This list mirrors "Guardrail paths" in `docs/agents/branch-protection.md`, which is canonical. Check with `gh pr view <n> --json files --jq '.files[].path'`. Comment `A human must merge this PR: it touches guardrail files (<list>).` and stop.
 4. **CI not green**: `gh pr checks <n>`. Pending: wait with `gh pr checks <n> --watch`, then re-check. Failing: comment with the failing check and stop.
 5. **Otherwise merge**: `gh pr merge <n> --squash --delete-branch`. Squash is the only merge method; the server-side ruleset is the authority on whether the merge may happen, so when it refuses, comment the error and stop.
 
