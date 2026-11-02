@@ -840,8 +840,7 @@ def test_a_non_czk_fee_is_converted_at_the_rate_of_the_day_it_was_paid_keeping_i
     t = valued(
         fees=[
             portu_fee(date(2021, 6, 1), "2", currency="EUR"),
-            # A Saturday: the rate of the Friday before.
-            portu_fee(date(2021, 6, 5), "1.50", currency="EUR"),
+            portu_fee(date(2021, 6, 4), "1.50", currency="EUR"),
             portu_fee(date(2021, 6, 5), "10"),
         ],
         rates=[rate(date(2021, 6, 1), "25"), rate(date(2021, 6, 4), "26"), rate(date(2021, 6, 7), "30")],
@@ -856,21 +855,24 @@ def test_a_non_czk_fee_is_converted_at_the_rate_of_the_day_it_was_paid_keeping_i
 def test_a_non_czk_fee_with_no_rate_on_its_day_is_left_out_of_the_czk_total_and_warned_about() -> None:
     before_rates = portu_fee(date(2021, 6, 1), "2", currency="EUR")
     no_rates = portu_fee(date(2021, 6, 2), "3", currency="USD")
+    # A Saturday: ČNB published no rate that day, and the Friday's is not taken for it.
+    saturday = portu_fee(date(2021, 6, 5), "4", currency="EUR")
     t = valued(
         fees=[
             before_rates,
             no_rates,
-            portu_fee(date(2021, 6, 3), "1", currency="EUR"),
-            portu_fee(date(2021, 6, 3), "10"),
+            portu_fee(date(2021, 6, 4), "1", currency="EUR"),
+            portu_fee(date(2021, 6, 4), "10"),
+            saturday,
         ],
-        rates=[rate(date(2021, 6, 3), "25")],
-        today=date(2021, 6, 3),
+        rates=[rate(date(2021, 6, 4), "25")],
+        today=date(2021, 6, 5),
     )
 
     assert t.fees_paid == FeesPaid(
-        czk=Decimal(35), converted={"EUR": Decimal(1)}, not_converted={"EUR": Decimal(2), "USD": Decimal(3)}
+        czk=Decimal(35), converted={"EUR": Decimal(1)}, not_converted={"EUR": Decimal(6), "USD": Decimal(3)}
     )
-    assert t.fees_not_converted == (before_rates, no_rates)
+    assert t.fees_not_converted == (before_rates, no_rates, saturday)
 
 
 def test_fees_paid_after_the_last_day_are_not_counted() -> None:

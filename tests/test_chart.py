@@ -708,9 +708,8 @@ def test_each_holding_shows_its_fees_paid_in_czk_only_and_a_portu_holding_none(t
 
     funds = {(f["portfolio"], f["isin"]): f["feesPaid"] for f in page(tmp_path)["funds"]}
     ff_world = funds["J&T Banka · FF - World Fund A-ACC-CZK", "LU1756523376"]
-    assert ff_world["czk"] == pytest.approx(FF_WORLD_FEES)
-    # Nothing is invested in a Holding, so no share of it.
-    assert "share" not in ff_world
+    # Nothing is invested in a Holding, so no share of it; and no own-currency sums, only the CZK total.
+    assert ff_world == {"czk": pytest.approx(FF_WORLD_FEES)}
     assert [fees for (portfolio, _), fees in funds.items() if portfolio == "Portu · Moje portfolio"] == [None] * 3
 
 
@@ -740,7 +739,7 @@ def test_a_non_czk_fee_shows_its_own_currency_and_one_with_no_rate_on_its_day_is
         "share": 0.3425,
     }
     assert (
-        "Fees not converted to CZK (no rate on or before the day paid; run inflation-station fetch-fx): "
+        "Fees not converted to CZK (no rate on the day paid; run inflation-station fetch-fx): "
         "Portu · Moje portfolio 1.00 EUR on 2021-06-13"
     ) in stderr.splitlines()
 

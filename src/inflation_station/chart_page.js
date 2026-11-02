@@ -16,11 +16,14 @@ const cls = x => x == null ? "muted" : x >= 0 ? "pos" : "neg";
 const vs = (value, base) => value == null || base == null || base === 0 ? null : value / base - 1;
 const minus = (a, b) => a == null || b == null ? null : a - b;
 // Fees paid: the CZK total, with the own-currency sums converted into it and those left out of it (no rate on their
-// day); and, but for a Holding's, its share of the amount invested, which private mode leaves readable.
-const feeAmount = f => f == null ? `<span class="muted">No fees</span>` : abs(esc(nf(f.czk) + " CZK"
+// day), then its share of the amount invested, which private mode leaves readable.
+const noFees = `<span class="muted">No fees</span>`;
+const feeAmount = f => f == null ? noFees : abs(esc(nf(f.czk) + " CZK"
   + (f.converted.length ? ` (incl. ${f.converted.join(", ")})` : "") + f.notConverted.map(x => ` + ${x}`).join("")));
 const feeShare = f => f == null || f.share == null ? "–" : (100 * f.share).toFixed(1) + " %";
-const feesPaid = f => f == null || !("share" in f) ? feeAmount(f) : `${feeAmount(f)} <span class="muted">· ${feeShare(f)}</span>`;
+const feesPaid = f => f == null ? noFees : `${feeAmount(f)} <span class="muted">· ${feeShare(f)}</span>`;
+// A Holding's Fees paid: the CZK total only, as nothing is invested in it.
+const holdingFeesPaid = f => f == null ? noFees : abs(esc(nf(f.czk) + " CZK"));
 
 // ---------- theme ----------
 // One colour per role, on every chart: value, amount invested, inflation (its two series told apart by dash).
@@ -142,7 +145,7 @@ function renderDashboard(el) {
     const row = document.createElement("tr");
     row.innerHTML = `<td>${esc(f.name)}<div class="isin">${holdingLine(f)}</div></td>
       <td>${esc(f.pricedIn)}</td><td>${czk(f.value)}${f.currencyValue ? `<div class="isin">${abs(esc(f.currencyValue))}</div>` : ""}</td>
-      <td>${abs(esc(f.units))}</td><td>${feesPaid(f.feesPaid)}</td>`;
+      <td>${abs(esc(f.units))}</td><td>${holdingFeesPaid(f.feesPaid)}</td>`;
     tbody.append(row);
   });
 }

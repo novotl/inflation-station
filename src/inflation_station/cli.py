@@ -208,6 +208,6 @@ def _report_fees_not_converted(t: Timeline) -> None:
             f"{portfolio_name(f.portfolio)} {f.amount:,.2f} {f.currency} on {f.day}" for f in t.fees_not_converted
         )
         click.echo(
-            f"Fees not converted to CZK (no rate on or before the day paid; run inflation-station fetch-fx): {fees}",
+            f"Fees not converted to CZK (no rate on the day paid; run inflation-station fetch-fx): {fees}",
             err=True,
         )

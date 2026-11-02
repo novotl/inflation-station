@@ -44,15 +44,15 @@ class Hurdle:
 
 @dataclass(frozen=True)
 class FeesPaid:
-    """All the Fees paid on or before the last day: each converted to CZK at the last known ČNB rate on or before the
-    day it was paid. False when there are none.
+    """All the Fees paid on or before the last day: each converted to CZK at the ČNB rate on the day it was paid. False
+    when its CZK total is 0 and none is left out of it.
     """
 
     # The CZK Fees, and every other Fee converted to CZK.
     czk: Decimal
     # The own-currency sum of the Fees converted into `czk`, by currency other than CZK, sorted by currency.
     converted: Mapping[str, Decimal] = field(default_factory=dict)
-    # The own-currency sum of the Fees left out of `czk` as no rate was known on their day, by currency, sorted.
+    # The own-currency sum of the Fees left out of `czk` as there was no rate on their day, by currency, sorted.
     not_converted: Mapping[str, Decimal] = field(default_factory=dict)
 
     def __bool__(self) -> bool:
@@ -60,7 +60,7 @@ class FeesPaid:
 
 
 class PaidFee(NamedTuple):
-    """A Fee paid on or before the last day, and its CZK at the rate of its day; None when no rate was known then."""
+    """A Fee paid on or before the last day, and its CZK at the rate of its day; None when there was no rate then."""
 
     fee: Fee
     czk: Decimal | None
@@ -159,7 +159,7 @@ class Timeline:
     cash_not_valued: Mapping[str, str]
     # Every Fee, in every Portfolio.
     fees_paid: FeesPaid
-    # The non-CZK Fees paid on or before the last day with no rate known on their day, so left out of every CZK figure
+    # The non-CZK Fees paid on or before the last day with no rate on their day, so left out of every CZK figure
     # of Fees paid. A warning, not an error.
     fees_not_converted: tuple[Fee, ...]
     # Every stretch of days a Portfolio's Cash in a currency is negative, by Portfolio, then currency, then day. A
@@ -220,7 +220,7 @@ def timeline(
             holding_currency_values[h] = _zero_when_not_held(units, _times(units, unit_prices[h.isin]))
             czk_per_unit = czk_rates[fund_currencies[h.isin]]
             holding_values[h] = _zero_when_not_held(units, _times(holding_currency_values[h], czk_per_unit))
-    paid = _paid_in_czk(rows.fees, dates, czk_rates)
+    paid = _paid_in_czk(rows.fees, dates[-1], rates)
     moves = _cash_moves(rows)
     cash = _cash(dates, moves)
     cash_values, cash_not_valued = _cash_values(cash, czk_rates)
@@ -379,17 +379,16 @@ def _czk_rates(dates: Sequence[date], rates: Sequence[FxRate]) -> dict[str, tupl
     } | {CZK: tuple(Decimal(1) for _ in dates)}
 
 
-def _paid_in_czk(
-    fees: Iterable[Fee], dates: Sequence[date], czk_rates: Mapping[str, Sequence[Decimal | None]]
-) -> list[PaidFee]:
-    """Each Fee paid on or before the last day, with its CZK at the last known rate on or before the day it was paid;
-    None when no rate was known then.
+def _paid_in_czk(fees: Iterable[Fee], last_day: date, rates: Iterable[FxRate]) -> list[PaidFee]:
+    """Each Fee paid on or before `last_day`, with its CZK at the ČNB rate on the day it was paid; None when there was
+    no rate that day (not even the one before it is taken).
     """
+    czk_rate = {(r.from_currency, r.day): r.rate for r in rates if r.to_currency == CZK}
     paid: list[PaidFee] = []
     for f in fees:
-        if f.day > dates[-1]:
+        if f.day > last_day:
             continue
-        rate = czk_rates[f.currency][(f.day - dates[0]).days] if f.currency in czk_rates else None
+        rate = Decimal(1) if f.currency == CZK else czk_rate.get((f.currency, f.day))
         paid.append(PaidFee(f, None if rate is None else f.amount * rate))
     return paid
 

@@ -161,25 +161,24 @@ def _holding_section(timeline: Timeline, holding: Holding) -> dict[str, Any]:
         "currencyValue": None if currency == CZK or currency_value is None else _amount(currency_value, currency),
         "units": _units(timeline.units_held[holding][-1]),
         "notValued": timeline.not_valued.get(isin),
-        # In CZK only: nothing is invested in a Holding to take a share of (ADR-0003).
-        "feesPaid": _fees_paid(timeline.holding_fees_paid[holding]),
+        # The CZK total only, with no share: nothing is invested in a Holding to take a share of (ADR-0003). A Fee with
+        # no rate on its day is left out of it, and named by `chart`'s warning.
+        "feesPaid": {"czk": float(fees.czk)} if (fees := timeline.holding_fees_paid[holding]) else None,
     }
 
 
-def _fees_paid(fees: FeesPaid, invested: Sequence[Decimal] | None = None) -> dict[str, Any] | None:
-    """Fees paid: the CZK total, the own-currency sums converted into it and those left out of it, and, given the
-    amount invested, the total's share of it on the last day. None when there are no Fees.
+def _fees_paid(fees: FeesPaid, invested: Sequence[Decimal]) -> dict[str, Any] | None:
+    """Fees paid: the CZK total, the own-currency sums converted into it and those left out of it, and the total's
+    share of the amount invested on the last day. None when there are no Fees.
     """
     if not fees:
         return None
-    figures: dict[str, Any] = {
+    return {
         "czk": float(fees.czk),
         "converted": [_amount(amount, currency) for currency, amount in fees.converted.items()],
         "notConverted": [_amount(amount, currency) for currency, amount in fees.not_converted.items()],
+        "share": float(fees.czk / invested[-1]) if invested[-1] else None,
     }
-    if invested is not None:
-        figures["share"] = float(fees.czk / invested[-1]) if invested[-1] else None
-    return figures
 
 
 def _whole_portfolio_chart(timeline: Timeline) -> list[dict[str, Any]]:
