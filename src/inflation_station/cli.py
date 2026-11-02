@@ -3,7 +3,7 @@ from pathlib import Path
 import click
 
 from inflation_station import clock, cnb
-from inflation_station.chart import portfolio_name, write_chart
+from inflation_station.chart import amount_text, portfolio_name, write_chart
 from inflation_station.domain import Rows
 from inflation_station.errors import InflationStationError
 from inflation_station.freshness import out_of_date
@@ -205,7 +205,7 @@ def _report_fees_not_converted(t: Timeline) -> None:
     """Name the Fees left out of every CZK figure of Fees paid, on stderr: a warning, not a failure."""
     if t.fees_not_converted:
         fees = ", ".join(
-            f"{portfolio_name(f.portfolio)} {f'{f.amount:,.2f}'.replace(',', ' ')} {f.currency} on {f.day}"
+            f"{portfolio_name(f.portfolio)} {amount_text(f.amount, f.currency, thousands=' ')} on {f.day}"
             for f in t.fees_not_converted
         )
         click.echo(

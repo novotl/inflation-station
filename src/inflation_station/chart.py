@@ -158,7 +158,7 @@ def _holding_section(timeline: Timeline, holding: Holding) -> dict[str, Any]:
         "pricedIn": timeline.priced_in[isin],
         "value": _last(timeline.holding_values.get(holding)),
         # Only for funds valued in a currency other than CZK.
-        "currencyValue": None if currency == CZK or currency_value is None else _amount(currency_value, currency),
+        "currencyValue": None if currency == CZK or currency_value is None else amount_text(currency_value, currency),
         "units": _units(timeline.units_held[holding][-1]),
         "notValued": timeline.not_valued.get(isin),
         # The CZK total only, with no share: nothing is invested in a Holding to take a share of (ADR-0003). A Fee with
@@ -176,8 +176,10 @@ def _fees_paid_data(fees: FeesPaid, invested: Sequence[Decimal]) -> dict[str, An
         return None
     return {
         "czk": float(fees.czk),
-        "converted": [_amount(amount, currency, thousands=" ") for currency, amount in fees.converted.items()],
-        "notConverted": [_amount(amount, currency, thousands=" ") for currency, amount in fees.not_converted.items()],
+        "converted": [amount_text(amount, currency, thousands=" ") for currency, amount in fees.converted.items()],
+        "notConverted": [
+            amount_text(amount, currency, thousands=" ") for currency, amount in fees.not_converted.items()
+        ],
         "share": float(fees.czk / invested[-1]) if invested[-1] else None,
     }
 
@@ -328,7 +330,7 @@ def _last(amounts: Sequence[Decimal | None] | None) -> float | None:
     return None if amounts is None or amounts[-1] is None else float(amounts[-1])
 
 
-def _amount(amount: Decimal | float, currency: str, thousands: str = ",") -> str:
+def amount_text(amount: Decimal | float, currency: str, thousands: str = ",") -> str:
     """An amount in its currency, to the hundredth, with `thousands` as the thousands separator (Fees paid separate
     thousands with a space).
     """
