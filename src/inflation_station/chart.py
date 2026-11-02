@@ -329,8 +329,8 @@ def _last(amounts: Sequence[Decimal | None] | None) -> float | None:
 
 
 def _amount(amount: Decimal | float, currency: str, thousands: str = ",") -> str:
-    """An amount in its currency, to the hundredth, with `thousands` as the thousands separator (Fees paid, as #54
-    writes them, separate thousands with a space).
+    """An amount in its currency, to the hundredth, with `thousands` as the thousands separator (Fees paid separate
+    thousands with a space).
     """
     return f"{amount:,.2f} {currency}".replace(",", thousands)
 

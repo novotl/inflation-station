@@ -205,7 +205,8 @@ def _report_fees_not_converted(t: Timeline) -> None:
     """Name the Fees left out of every CZK figure of Fees paid, on stderr: a warning, not a failure."""
     if t.fees_not_converted:
         fees = ", ".join(
-            f"{portfolio_name(f.portfolio)} {f.amount:,.2f} {f.currency} on {f.day}" for f in t.fees_not_converted
+            f"{portfolio_name(f.portfolio)} {f'{f.amount:,.2f}'.replace(',', ' ')} {f.currency} on {f.day}"
+            for f in t.fees_not_converted
         )
         click.echo(
             f"Fees not converted to CZK (no rate on the day paid; run inflation-station fetch-fx): {fees}",

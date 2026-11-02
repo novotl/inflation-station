@@ -15,9 +15,9 @@ const cls = x => x == null ? "muted" : x >= 0 ? "pos" : "neg";
 // value / base - 1, or null when either is unknown.
 const vs = (value, base) => value == null || base == null || base === 0 ? null : value / base - 1;
 const minus = (a, b) => a == null || b == null ? null : a - b;
-// Fees paid, as #54 writes it (`4 254 CZK (incl. 12.50 EUR) · 1.3%`): the CZK total, with the own-currency sums
-// converted into it and those left out of it (no rate on their day), then its share of the amount invested, which
-// private mode leaves readable.
+// Fees paid, e.g. `4 254 CZK (incl. 12.50 EUR) · 1.3%`, thousands separated by a space: the CZK total, with the
+// own-currency sums converted into it and those left out of it (no rate on their day), then its share of the amount
+// invested, which private mode leaves readable.
 const noFees = `<span class="muted">No fees</span>`;
 const feeCzk = f => nf(f.czk).replace(/,/g, " ") + " CZK";
 const feeAmount = f => f == null ? noFees : abs(esc(feeCzk(f)
