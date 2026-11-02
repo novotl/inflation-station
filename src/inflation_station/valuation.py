@@ -59,6 +59,13 @@ class FeesPaid:
         return bool(self.czk or self.not_converted)
 
 
+class PaidFee(NamedTuple):
+    """A Fee paid on or before the last day, and its CZK at the rate of its day; None when no rate was known then."""
+
+    fee: Fee
+    czk: Decimal | None
+
+
 class Holding(NamedTuple):
     """The units of one Fund held in one Portfolio."""
 
@@ -244,7 +251,7 @@ def timeline(
             value=_sum(parts) if parts else None,
             hurdles=_hurdles(dates, invested, levels_by_series),
             cash_not_valued=portfolio_cash_not_valued,
-            fees_paid=_fees_paid((f, czk) for f, czk in paid if f.portfolio == a),
+            fees_paid=_fees_paid(p for p in paid if p.fee.portfolio == a),
         )
     every_investment = [i for invested in invested_in.values() for i in invested]
     return Timeline(
@@ -256,7 +263,7 @@ def timeline(
         units_held=units_held,
         holding_values=holding_values,
         holding_currency_values=holding_currency_values,
-        holding_fees_paid={h: _fees_paid((f, czk) for f, czk in paid if _is_in(f, h)) for h in holdings},
+        holding_fees_paid={h: _fees_paid(p for p in paid if _is_in(p.fee, h)) for h in holdings},
         fund_currencies=fund_currencies,
         priced_in=priced_in,
         whole_portfolio_value=_sum(whole_portfolio_parts) if whole_portfolio_parts else None,
@@ -267,7 +274,7 @@ def timeline(
         cash_value=_sum(cash_values.values()) if cash_values else None,
         cash_not_valued=cash_not_valued,
         fees_paid=_fees_paid(paid),
-        fees_not_converted=tuple(f for f, czk in paid if czk is None),
+        fees_not_converted=tuple(p.fee for p in paid if p.czk is None),
         negative_cash=tuple(negative_cash),
     )
 
@@ -277,7 +284,7 @@ def _platform_totals(
     invested_in: Mapping[Portfolio, Sequence[tuple[date, Decimal]]],
     portfolios: Mapping[Portfolio, PortfolioTimeline],
     levels_by_series: Mapping[str, Sequence[IndexLevel]],
-    paid: Sequence[tuple[Fee, Decimal | None]],
+    paid: Sequence[PaidFee],
 ) -> dict[Platform, PortfolioTimeline]:
     """Each Platform's Portfolios added together. `invested_in` is each Portfolio's Deposits' (date, CZK); `paid` is
     every Fee paid, with its CZK."""
@@ -292,7 +299,7 @@ def _platform_totals(
             value=_sum(values) if values else None,
             hurdles=_hurdles(dates, invested, levels_by_series),
             cash_not_valued={c: why for a in on_it for c, why in portfolios[a].cash_not_valued.items()},
-            fees_paid=_fees_paid((f, czk) for f, czk in paid if f.portfolio.platform == platform),
+            fees_paid=_fees_paid(p for p in paid if p.fee.portfolio.platform == platform),
         )
     return totals
 
@@ -374,20 +381,20 @@ def _czk_rates(dates: Sequence[date], rates: Sequence[FxRate]) -> dict[str, tupl
 
 def _paid_in_czk(
     fees: Iterable[Fee], dates: Sequence[date], czk_rates: Mapping[str, Sequence[Decimal | None]]
-) -> list[tuple[Fee, Decimal | None]]:
+) -> list[PaidFee]:
     """Each Fee paid on or before the last day, with its CZK at the last known rate on or before the day it was paid;
     None when no rate was known then.
     """
-    paid: list[tuple[Fee, Decimal | None]] = []
+    paid: list[PaidFee] = []
     for f in fees:
         if f.day > dates[-1]:
             continue
         rate = czk_rates[f.currency][(f.day - dates[0]).days] if f.currency in czk_rates else None
-        paid.append((f, None if rate is None else f.amount * rate))
+        paid.append(PaidFee(f, None if rate is None else f.amount * rate))
     return paid
 
 
-def _fees_paid(paid: Iterable[tuple[Fee, Decimal | None]]) -> FeesPaid:
+def _fees_paid(paid: Iterable[PaidFee]) -> FeesPaid:
     """The Fees paid, each with its CZK, as `_paid_in_czk` gives them."""
     czk = Decimal(0)
     converted: defaultdict[str, Decimal] = defaultdict(Decimal)
