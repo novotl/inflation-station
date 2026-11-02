@@ -15,6 +15,12 @@ const cls = x => x == null ? "muted" : x >= 0 ? "pos" : "neg";
 // value / base - 1, or null when either is unknown.
 const vs = (value, base) => value == null || base == null || base === 0 ? null : value / base - 1;
 const minus = (a, b) => a == null || b == null ? null : a - b;
+// Fees paid: the CZK total, with the own-currency sums converted into it and those left out of it (no rate on their
+// day); and, beside a Portfolio's, its share of the amount invested, which private mode leaves readable.
+const feeAmount = f => f == null ? `<span class="muted">No fees</span>` : abs(esc(nf(f.czk) + " CZK"
+  + (f.converted.length ? ` (incl. ${f.converted.join(", ")})` : "") + f.notConverted.map(x => ` + ${x}`).join("")));
+const feeShare = f => f == null || f.share == null ? "–" : (100 * f.share).toFixed(1) + " %";
+const feesPaid = f => f == null || !("share" in f) ? feeAmount(f) : `${feeAmount(f)} <span class="muted">· ${feeShare(f)}</span>`;
 
 // ---------- theme ----------
 // One colour per role, on every chart: value, amount invested, inflation (its two series told apart by dash).
@@ -106,13 +112,14 @@ function renderDashboard(el) {
     ${kpi("Value today", czk(P.value), `<span class="muted">as of ${esc(D.asOf)}</span>`)}
     ${kpi("Invested", czk(P.invested), `<span class="muted">Deposits</span>`)}
     ${kpi("Gain", signed(gain, czk(gain)), signed(gain, pct(vs(P.value, P.invested))))}
+    ${kpi("Fees paid", feeAmount(P.feesPaid), `<span class="muted">${feeShare(P.feesPaid)} of invested</span>`)}
     ${P.hurdles.map(h => kpi(`vs inflation (${h.name})`, signed(minus(P.value, h.value), czk(minus(P.value, h.value))),
       `${signed(vs(P.value, h.value), pct(vs(P.value, h.value)))} <span class="muted">· hurdle ${czk(h.value)}</span>`)).join("")}
     </div><div class="card"><div id="dashboard-chart"></div></div>
     <h2>Platform totals</h2><div class="portfolio-cards platform-totals"></div>
     <h2>Portfolios</h2><div class="portfolio-cards portfolios"></div>
     <h2>Funds</h2><div class="card table-card"><table class="funds"><thead><tr><th>Fund</th><th>Priced in</th><th>Value</th>
-    <th>Units</th></tr></thead><tbody></tbody></table></div>`;
+    <th>Units</th><th>Fees paid</th></tr></thead><tbody></tbody></table></div>`;
   czkChart("dashboard-chart", P.chart, 420);
   const section = (cards, a) => {
     const card = document.createElement("div");
@@ -121,6 +128,7 @@ function renderDashboard(el) {
     card.innerHTML = `<h3>${esc(a.name)}</h3><div class="facts">
       <div><b>Value</b>${czk(a.value)}</div><div><b>Invested</b>${czk(a.invested)}</div>
       <div><b>Gain</b>${signed(gain, czk(gain))} ${signed(gain, pct(vs(a.value, a.invested)))}</div>
+      <div><b>Fees paid</b>${feesPaid(a.feesPaid)}</div>
       ${a.hurdles.map(h => `<div><b>vs ${esc(h.name)}</b>${signed(minus(a.value, h.value), czk(minus(a.value, h.value)))}
         ${signed(vs(a.value, h.value), pct(vs(a.value, h.value)))}</div>`).join("")}
       </div>${portfolioNotes(a)}<div></div>`;
@@ -134,7 +142,7 @@ function renderDashboard(el) {
     const row = document.createElement("tr");
     row.innerHTML = `<td>${esc(f.name)}<div class="isin">${holdingLine(f)}</div></td>
       <td>${esc(f.pricedIn)}</td><td>${czk(f.value)}${f.currencyValue ? `<div class="isin">${abs(esc(f.currencyValue))}</div>` : ""}</td>
-      <td>${abs(esc(f.units))}</td>`;
+      <td>${abs(esc(f.units))}</td><td>${feesPaid(f.feesPaid)}</td>`;
     tbody.append(row);
   });
 }
@@ -197,13 +205,13 @@ function renderStrip(el) {
     const fact = (label, html) => `<div><b>${esc(label)}</b>${html}</div>`;
     if (!picked) {
       detail.innerHTML = `<h1>Whole Portfolio</h1><div class="facts">${fact("Value", czk(P.value))}${fact("Invested", czk(P.invested))}
-        ${P.hurdles.map(h => fact(`Hurdle (${h.name})`, czk(h.value))).join("")}</div><div></div>`;
+        ${fact("Fees paid", feesPaid(P.feesPaid))}${P.hurdles.map(h => fact(`Hurdle (${h.name})`, czk(h.value))).join("")}</div><div></div>`;
       // Portfolio values stacked, so the top edge is the Whole Portfolio value.
       czkChart(detail.lastElementChild, P.composition, height());
     } else {
       const { a } = items.find(it => it.key === picked);
       detail.innerHTML = `<h1>${esc(a.name)}</h1><div class="facts">${fact("Value", czk(a.value))}${fact("Invested", czk(a.invested))}
-        ${a.hurdles.map(h => fact(`Hurdle (${h.name})`, czk(h.value))).join("")}</div>${portfolioNotes(a)}<div></div>`;
+        ${fact("Fees paid", feesPaid(a.feesPaid))}${a.hurdles.map(h => fact(`Hurdle (${h.name})`, czk(h.value))).join("")}</div>${portfolioNotes(a)}<div></div>`;
       czkChart(detail.lastElementChild, a.chart, height());
     }
   };

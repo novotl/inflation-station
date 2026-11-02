@@ -4,6 +4,8 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session
@@ -12,7 +14,7 @@ from inflation_station.domain import Conversion, Deposit, Fee, Fund, Platform, P
 from inflation_station.errors import InflationStationError
 from inflation_station.fx_rate import FxRate
 from inflation_station.price_sources import FundPrice
-from inflation_station.store import Added, DepositRecord, Store, database_url, engine
+from inflation_station.store import MIGRATIONS_DIR, Added, DepositRecord, Store, database_url, engine, migrate
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -31,7 +33,8 @@ PURCHASE = Purchase(
     amount=Decimal("8000.00"),
 )
 DEPOSIT = Deposit(PORTU, "12.04.2021;Vklad z bankovního účtu;;1000;CZK;1", date(2021, 4, 12), Decimal(1000), "CZK")
-FEE = Fee(JT, "900100001", date(2021, 6, 15), Decimal("291.51"), "CZK")
+FEE = Fee(JT, "900100001", date(2021, 6, 15), Decimal("291.51"), "CZK", fund=FUND)
+PORTU_FEE = Fee(PORTU, "01.04.2021;Poplatek;;25;CZK;1", date(2021, 4, 1), Decimal(25), "CZK")
 EVERY_KIND = Rows(
     deposits=[DEPOSIT],
     purchases=[PURCHASE],
@@ -40,7 +43,7 @@ EVERY_KIND = Rows(
             PORTU, Fund("IE00B53QG562", "SXR7 GY"), "s", date(2021, 4, 15), Decimal(1), Decimal(84), "EUR", Decimal(84)
         )
     ],
-    fees=[FEE],
+    fees=[FEE, PORTU_FEE],
     conversions=[Conversion(PORTU, "c", date(2021, 4, 15), Decimal(21), "EUR", Decimal(546), "CZK")],
 )
 
@@ -52,9 +55,10 @@ def test_every_kind_of_row_round_trips(tmp_path: Path) -> None:
         "Deposits": Added(1, 0),
         "Purchases": Added(1, 0),
         "Sales": Added(1, 0),
-        "Fees": Added(1, 0),
+        "Fees": Added(2, 0),
         "Conversions": Added(1, 0),
     }
+    # A Fee charged on a Purchase keeps its Holding's Fund; any other has none.
     assert store.rows() == EVERY_KIND
 
 
@@ -163,3 +167,52 @@ def test_a_database_stored_before_the_normalized_schema_must_be_deleted(tmp_path
 
     with pytest.raises(InflationStationError, match="was stored by an older version that can't be upgraded"):
         Store(tmp_path)
+
+
+def test_upgrading_links_each_stored_fee_charged_on_a_purchase_to_its_fund(tmp_path: Path) -> None:
+    url = database_url(tmp_path)
+    migrate(url, "0001")
+    with engine(url).begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO portfolio (id, platform_id, key, name)"
+                " VALUES (1, 1, '123', '123'), (2, 3, 'Moje portfolio', 'Moje portfolio')"
+            )
+        )
+        connection.execute(text("INSERT INTO fund (id, isin, name) VALUES (7, 'LU1756523376', 'Fund')"))
+        # A Portu Purchase too: no Fee has its source row.
+        connection.execute(
+            text(
+                "INSERT INTO purchase (portfolio_id, source_row_id, day, fund_id, units, unit_price, amount, currency,"
+                " imported_at) VALUES"
+                " (1, '900100001', '2021-06-15', 7, '5.4100', '1478.74', '8000.00', 'CZK', '2026-10-10 10:00:00'),"
+                " (2, 'p', '2021-04-15', 7, '1', '84', '84', 'CZK', '2026-10-10 10:00:00')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO fee (portfolio_id, source_row_id, day, amount, currency, imported_at) VALUES"
+                " (1, '900100001', '2021-06-15', '291.51', 'CZK', '2026-10-10 10:00:00'),"
+                " (2, '01.04.2021;Poplatek;;25;CZK;1', '2021-04-01', '25', 'CZK', '2026-10-10 10:00:00')"
+            )
+        )
+
+    store = Store(tmp_path)
+
+    assert store.rows().fees == [FEE, PORTU_FEE]
+    assert store.add_rows(Rows(fees=[FEE, PORTU_FEE]))["Fees"] == Added(added=0, already_present=2)
+    assert store.rows().fees == [FEE, PORTU_FEE]
+
+
+def test_downgrading_drops_the_link_and_keeps_the_fees(tmp_path: Path) -> None:
+    Store(tmp_path).add_rows(EVERY_KIND)
+    url = database_url(tmp_path)
+    config = Config(attributes={"url": url})
+    config.set_main_option("script_location", str(MIGRATIONS_DIR))
+
+    command.downgrade(config, "0001")
+
+    with engine(url).connect() as connection:
+        columns = [row[1] for row in connection.execute(text("PRAGMA table_info(fee)"))]
+        assert "fund_id" not in columns
+        assert connection.execute(text("SELECT count(*) FROM fee")).scalar_one() == len(EVERY_KIND.fees)

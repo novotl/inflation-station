@@ -105,7 +105,10 @@ def test_rows_are_read_by_type_with_amounts_unsigned() -> None:
         (date(2021, 3, 1), Decimal("10000.00"), "CZK"),
         (date(2021, 5, 3), Decimal("5000.00"), "CZK"),
     ]
-    assert [(f.day, f.amount, f.currency) for f in read.fees] == [(date(2021, 4, 1), Decimal("25.00"), "CZK")]
+    # Charged on the whole Portfolio, so no Holding's.
+    assert [(f.day, f.amount, f.currency, f.fund) for f in read.fees] == [
+        (date(2021, 4, 1), Decimal("25.00"), "CZK", None)
+    ]
     zprs = Fund(ZPRS, "ZPRS GY")
     bought = Purchase(
         MOJE,

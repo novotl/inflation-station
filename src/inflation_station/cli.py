@@ -142,6 +142,7 @@ def chart(data_dir: Path) -> None:
         raise click.ClickException(str(e)) from e
     _report_not_valued(t, {p.currency for p in prices} | set(t.cash))
     _report_negative_cash(t)
+    _report_fees_not_converted(t)
     for warning in warnings:
         click.echo(f"Out of date: {warning}", err=True)
     click.echo(f"Chart written to {path}")
@@ -198,3 +199,14 @@ def _report_negative_cash(t: Timeline) -> None:
         by_cash.setdefault((portfolio_name(n.portfolio), n.currency), []).append(days)
     for (portfolio, currency), days in by_cash.items():
         click.echo(f"Negative Cash ({currency}): {portfolio} on {', '.join(days)}", err=True)
+
+
+def _report_fees_not_converted(t: Timeline) -> None:
+    """Name the Fees left out of every CZK figure of Fees paid, on stderr: a warning, not a failure."""
+    if t.fees_not_converted:
+        fees = ", ".join(
+            f"{portfolio_name(f.portfolio)} {f.amount} {f.currency} on {f.day}" for f in t.fees_not_converted
+        )
+        click.echo(
+            f"Fees not converted to CZK (no rate on the day paid; run inflation-station fetch-fx): {fees}", err=True
+        )

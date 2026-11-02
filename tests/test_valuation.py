@@ -18,7 +18,7 @@ from inflation_station.domain import (
 from inflation_station.fx_rate import FxRate
 from inflation_station.price_indexes import CSU_CPI, IndexLevel
 from inflation_station.price_sources import FundPrice
-from inflation_station.valuation import NO_PRICES, Holding, NegativeCash, timeline
+from inflation_station.valuation import NO_PRICES, FeesPaid, Holding, NegativeCash, timeline
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -429,12 +429,13 @@ def deposit(day: date, amount: str, currency: str = "CZK") -> Deposit:
 
 
 def fee(on: Purchase, day: date, czk: str) -> Fee:
-    """A Fee charged on `day` on a J&T Purchase."""
-    return Fee(on.portfolio, on.source_row_id, day, Decimal(czk), "CZK")
+    """A Fee charged on `day` on a J&T Purchase, so it belongs to the Purchase's Holding."""
+    return Fee(on.portfolio, on.source_row_id, day, Decimal(czk), "CZK", fund=on.fund)
 
 
-def portu_fee(day: date, amount: str) -> Fee:
-    return Fee(PORTU, f"fee {day} {amount}", day, Decimal(amount), "CZK")
+def portu_fee(day: date, amount: str, currency: str = "CZK") -> Fee:
+    """A Fee on the whole Portu Portfolio, so it belongs to no Holding."""
+    return Fee(PORTU, f"fee {day} {amount}", day, Decimal(amount), currency)
 
 
 def conversion(day: date, from_amount: str, from_currency: str, to_amount: str, to_currency: str) -> Conversion:
@@ -792,3 +793,87 @@ def test_a_platform_total_has_no_value_only_when_none_of_its_portfolios_has_one(
     # J&T's EUR fund and EUR Cash can't be valued, but the other Portfolio's CZK Cash can.
     assert t.platform_totals[Platform.JT].value == t.portfolios[OTHER_JT].value == (Decimal(6),)
     assert t.platform_totals[Platform.JT].cash_not_valued == {"EUR": "no EUR rates stored"}
+
+
+def test_a_holdings_fees_paid_are_the_fees_charged_on_its_purchases_and_a_portfolios_all_its_fees() -> None:
+    first = purchase(date(2021, 6, 1), "1000")
+    second = purchase(date(2021, 6, 2), "500")
+    other = purchase(date(2021, 6, 2), "500", isin=OTHER_CZK_FUND)
+    etf = buy(date(2021, 6, 1), "1", "100")
+    t = valued(
+        [first, second, other, etf],
+        fees=[
+            fee(first, first.day, "30"),
+            fee(second, second.day, "15.50"),
+            portu_fee(date(2021, 6, 1), "10"),
+            portu_fee(date(2021, 6, 3), "5"),
+        ],
+        today=date(2021, 6, 3),
+    )
+
+    assert t.holding_fees_paid == {
+        jt(CZK_FUND): FeesPaid(czk=Decimal("45.50")),
+        jt(OTHER_CZK_FUND): FeesPaid(czk=Decimal(0)),
+        Holding(PORTU, Fund(ETF, f"ETF {ETF}")): FeesPaid(czk=Decimal(0)),
+    }
+    assert not t.holding_fees_paid[Holding(PORTU, Fund(ETF, f"ETF {ETF}"))]
+    assert t.portfolios[JT].fees_paid == FeesPaid(czk=Decimal("45.50"))
+    # A Portu Portfolio's Fees belong to no Holding, but they are still its Fees.
+    assert t.portfolios[PORTU].fees_paid == FeesPaid(czk=Decimal(15))
+
+
+def test_a_platform_totals_and_the_whole_portfolios_fees_paid_add_up_their_portfolios() -> None:
+    bought = purchase(date(2021, 6, 1), "1000")
+    other = replace(purchase(date(2021, 6, 1), "200"), portfolio=OTHER_JT)
+    t = valued(
+        [bought, other],
+        fees=[fee(bought, bought.day, "30"), fee(other, other.day, "20"), portu_fee(date(2021, 6, 1), "10")],
+        today=date(2021, 6, 1),
+    )
+
+    assert t.platform_totals[Platform.JT].fees_paid == FeesPaid(czk=Decimal(50))
+    assert t.platform_totals[Platform.PORTU].fees_paid == FeesPaid(czk=Decimal(10))
+    assert t.fees_paid == FeesPaid(czk=Decimal(60))
+
+
+def test_a_non_czk_fee_is_converted_at_the_rate_of_the_day_it_was_paid_keeping_its_own_currency_sum() -> None:
+    t = valued(
+        fees=[
+            portu_fee(date(2021, 6, 1), "2", currency="EUR"),
+            # A Saturday: the rate of the Friday before.
+            portu_fee(date(2021, 6, 5), "1.50", currency="EUR"),
+            portu_fee(date(2021, 6, 5), "10"),
+        ],
+        rates=[rate(date(2021, 6, 1), "25"), rate(date(2021, 6, 4), "26"), rate(date(2021, 6, 7), "30")],
+        today=date(2021, 6, 7),
+    )
+
+    # 2 EUR at 25 CZK, 1.50 EUR at 26 CZK and 10 CZK; not today's rate.
+    assert t.portfolios[PORTU].fees_paid == FeesPaid(czk=Decimal(99), converted={"EUR": Decimal("3.50")})
+    assert t.fees_not_converted == ()
+
+
+def test_a_non_czk_fee_with_no_rate_on_its_day_is_left_out_of_the_czk_total_and_warned_about() -> None:
+    before_rates = portu_fee(date(2021, 6, 1), "2", currency="EUR")
+    no_rates = portu_fee(date(2021, 6, 2), "3", currency="USD")
+    t = valued(
+        fees=[
+            before_rates,
+            no_rates,
+            portu_fee(date(2021, 6, 3), "1", currency="EUR"),
+            portu_fee(date(2021, 6, 3), "10"),
+        ],
+        rates=[rate(date(2021, 6, 3), "25")],
+        today=date(2021, 6, 3),
+    )
+
+    assert t.fees_paid == FeesPaid(
+        czk=Decimal(35), converted={"EUR": Decimal(1)}, not_converted={"EUR": Decimal(2), "USD": Decimal(3)}
+    )
+    assert t.fees_not_converted == (before_rates, no_rates)
+
+
+def test_fees_paid_after_the_last_day_are_not_counted() -> None:
+    t = valued(fees=[portu_fee(date(2021, 6, 1), "10"), portu_fee(date(2021, 6, 9), "5")], today=date(2021, 6, 1))
+
+    assert t.fees_paid == FeesPaid(czk=Decimal(10))

@@ -89,6 +89,9 @@ class Fee:
     day: date
     amount: Decimal
     currency: str
+    # The Fund of the Holding it belongs to, when it was charged on a Purchase (ADR-0003); None when it belongs to its
+    # Portfolio only.
+    fund: Fund | None = None
 
 
 @dataclass(frozen=True)

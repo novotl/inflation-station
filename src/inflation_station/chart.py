@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from inflation_station.domain import Portfolio
-    from inflation_station.valuation import Hurdle, PortfolioTimeline, Timeline
+    from inflation_station.valuation import FeesPaid, Hurdle, PortfolioTimeline, Timeline
 
 CHART_NAME = "chart.html"
 HOVER_CZK = "%{y:,.2f} CZK"
@@ -80,6 +80,7 @@ def _page_data(timeline: Timeline, warnings: Sequence[str]) -> dict[str, Any]:
             "invested": _last(timeline.amount_invested),
             "hurdles": [{"name": NAMES[series], "value": _last(h.values)} for series, h in timeline.hurdles.items()],
             "benchmarkHurdle": _last(hurdle.values) if hurdle else None,
+            "feesPaid": _fees_paid(timeline.fees_paid, timeline.amount_invested),
             "chart": _whole_portfolio_chart(timeline),
             "composition": _composition(timeline, portfolios),
             "relative": _relative(timeline.dates, timeline.whole_portfolio_value, timeline.amount_invested, hurdle),
@@ -126,6 +127,7 @@ def _section(
         "invested": _last(series.amount_invested),
         "hurdles": [{"name": NAMES[s], "value": _last(h.values)} for s, h in series.hurdles.items()],
         "benchmarkHurdle": _last(hurdle.values) if hurdle else None,
+        "feesPaid": _fees_paid(series.fees_paid, series.amount_invested),
         "notValued": None if series.value is not None else f"none of its {' or '.join(missing)} valued",
         # What its value leaves out: its funds and its Cash in each currency that can't be valued, saying why. A fund
         # held in two Portfolios is named once.
@@ -156,10 +158,28 @@ def _holding_section(timeline: Timeline, holding: Holding) -> dict[str, Any]:
         "pricedIn": timeline.priced_in[isin],
         "value": _last(timeline.holding_values.get(holding)),
         # Only for funds valued in a currency other than CZK.
-        "currencyValue": None if currency == CZK or currency_value is None else f"{currency_value:,.2f} {currency}",
+        "currencyValue": None if currency == CZK or currency_value is None else _amount(currency_value, currency),
         "units": _units(timeline.units_held[holding][-1]),
         "notValued": timeline.not_valued.get(isin),
+        # In CZK only: nothing is invested in a Holding to take a share of (ADR-0003).
+        "feesPaid": _fees_paid(timeline.holding_fees_paid[holding]),
     }
+
+
+def _fees_paid(fees: FeesPaid, invested: Sequence[Decimal] | None = None) -> dict[str, Any] | None:
+    """Fees paid: the CZK total, the own-currency sums converted into it and those left out of it, and, given the
+    amount invested, the total's share of it on the last day. None when there are no Fees.
+    """
+    if not fees:
+        return None
+    figures: dict[str, Any] = {
+        "czk": float(fees.czk),
+        "converted": [_amount(amount, currency) for currency, amount in fees.converted.items()],
+        "notConverted": [_amount(amount, currency) for currency, amount in fees.not_converted.items()],
+    }
+    if invested is not None:
+        figures["share"] = float(fees.czk / invested[-1]) if invested[-1] else None
+    return figures
 
 
 def _whole_portfolio_chart(timeline: Timeline) -> list[dict[str, Any]]:
@@ -306,6 +326,11 @@ def _ratio(values: Sequence[Decimal | None], bases: Sequence[Decimal | None]) ->
 def _last(amounts: Sequence[Decimal | None] | None) -> float | None:
     """The amount on the last day, as a float for the page; None when there is none."""
     return None if amounts is None or amounts[-1] is None else float(amounts[-1])
+
+
+def _amount(amount: Decimal | float, currency: str) -> str:
+    """An amount in its currency, to the hundredth, with thousands separators."""
+    return f"{amount:,.2f} {currency}"
 
 
 def _units(units: Decimal) -> str:

@@ -121,8 +121,8 @@ def rows(statements: Iterable[Statement]) -> Rows:
                 msg = f"{holdings.name} row {cells[2]!r} ordered {cells[-1]}: {e}"
                 raise InflationStationError(msg) from e
             if fee:
-                # The Fee's identity is its Purchase's: one row of the holdings statement.
-                fees.append(Fee(purchase.portfolio, purchase.source_row_id, purchase.day, fee, CZK))
+                # The Fee's identity and Holding are its Purchase's: one row of the holdings statement.
+                fees.append(Fee(purchase.portfolio, purchase.source_row_id, purchase.day, fee, CZK, fund=purchase.fund))
     return Rows(deposits=deposits, purchases=purchases, fees=fees)
 
 

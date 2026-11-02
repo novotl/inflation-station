@@ -12,7 +12,8 @@ from click.testing import CliRunner
 from inflation_station import clock
 from inflation_station.chart import write_chart
 from inflation_station.cli import main
-from inflation_station.domain import Deposit, Fund, Platform, Portfolio, Purchase, Rows
+from inflation_station.domain import Deposit, Fee, Fund, Platform, Portfolio, Purchase, Rows
+from inflation_station.fx_rate import FxRate
 from inflation_station.price_sources import FundPrice
 from inflation_station.store import Store
 from inflation_station.valuation import timeline
@@ -669,4 +670,89 @@ def test_a_portfolio_with_nothing_valued_says_whether_its_funds_or_its_cash_are_
         "J&T Banka · 900000001": "none of its funds or Cash valued",
         "Portu · Cash only": "none of its Cash valued",
         "Portu · Moje portfolio": "none of its funds or Cash valued",
+    }
+
+
+# The fixture's J&T Fees, each charged on a Purchase: 3 494.83 CZK on FF World's, 793.82 CZK on J&T Money's, 291.13 CZK
+# on Franklin's and 145.63 CZK on Amundi's. Portu's export has one Fee, of 25 CZK, on the whole Portfolio.
+FF_WORLD_FEES, JT_FEES, PORTU_FEES = 3494.83, 3494.83 + 793.82 + 291.13 + 145.63, 25
+
+
+def test_the_whole_portfolio_each_platform_total_and_each_portfolio_show_fees_paid_in_czk_and_of_invested(
+    tmp_path: Path,
+) -> None:
+    fetch_everything(tmp_path)
+    run("--data-dir", tmp_path, "import", PORTU_EXPORT)
+    run("--data-dir", tmp_path, "chart")
+
+    data = page(tmp_path)
+    whole = data["wholePortfolio"]
+    assert whole["feesPaid"]["czk"] == pytest.approx(JT_FEES + PORTU_FEES)
+    assert whole["feesPaid"]["share"] == pytest.approx((JT_FEES + PORTU_FEES) / whole["invested"])
+    jt, portu = data["platformTotals"]
+    assert jt["feesPaid"]["czk"] == pytest.approx(JT_FEES)
+    assert jt["feesPaid"]["share"] == pytest.approx(JT_FEES / 235000)
+    # Every Fee in CZK: nothing converted.
+    assert (jt["feesPaid"]["converted"], jt["feesPaid"]["notConverted"]) == ([], [])
+    # A Portu Fee belongs to its Portfolio only, but is still its Portfolio's.
+    assert portu["feesPaid"]["czk"] == pytest.approx(PORTU_FEES)
+    (ff_world,) = (p for p in data["portfolios"] if p["name"] == "J&T Banka · FF - World Fund A-ACC-CZK")
+    assert ff_world["feesPaid"]["czk"] == pytest.approx(FF_WORLD_FEES)
+    assert ff_world["feesPaid"]["share"] == pytest.approx(FF_WORLD_FEES / ff_world["invested"])
+
+
+def test_each_holding_shows_its_fees_paid_in_czk_only_and_a_portu_holding_none(tmp_path: Path) -> None:
+    fetch_everything(tmp_path)
+    run("--data-dir", tmp_path, "import", PORTU_EXPORT)
+    run("--data-dir", tmp_path, "chart")
+
+    funds = {(f["portfolio"], f["isin"]): f["feesPaid"] for f in page(tmp_path)["funds"]}
+    ff_world = funds["J&T Banka · FF - World Fund A-ACC-CZK", "LU1756523376"]
+    assert ff_world["czk"] == pytest.approx(FF_WORLD_FEES)
+    # Nothing is invested in a Holding, so no share of it.
+    assert "share" not in ff_world
+    assert [fees for (portfolio, _), fees in funds.items() if portfolio == "Portu · Moje portfolio"] == [None] * 3
+
+
+def test_a_non_czk_fee_shows_its_own_currency_and_one_with_no_rate_on_its_day_is_left_out_and_warned_about(
+    tmp_path: Path,
+) -> None:
+    store = Store(tmp_path)
+    store.add_rows(
+        Rows(
+            deposits=[Deposit(MOJE_PORTFOLIO, "d", date(2021, 6, 13), Decimal(1000), "CZK")],
+            fees=[
+                Fee(MOJE_PORTFOLIO, "before rates", date(2021, 6, 13), Decimal(1), "EUR"),
+                Fee(MOJE_PORTFOLIO, "converted", date(2021, 6, 14), Decimal("12.50"), "EUR"),
+                Fee(MOJE_PORTFOLIO, "czk", date(2021, 6, 14), Decimal(30), "CZK"),
+            ],
+        )
+    )
+    store.add_fx_rates([FxRate(date(2021, 6, 14), "EUR", Decimal(1), "CZK", Decimal(25))])
+
+    exit_code, _, stderr = run("--data-dir", tmp_path, "chart")
+
+    assert exit_code == 0
+    assert page(tmp_path)["wholePortfolio"]["feesPaid"] == {
+        "czk": 342.5,
+        "converted": ["12.50 EUR"],
+        "notConverted": ["1.00 EUR"],
+        "share": 0.3425,
+    }
+    assert (
+        "Fees not converted to CZK (no rate on the day paid; run inflation-station fetch-fx): "
+        "Portu · Moje portfolio 1 EUR on 2021-06-13"
+    ) in stderr.splitlines()
+
+
+def test_fees_paid_with_nothing_invested_have_no_share_of_it(tmp_path: Path) -> None:
+    Store(tmp_path).add_rows(Rows(fees=[Fee(MOJE_PORTFOLIO, "f", date(2021, 6, 13), Decimal(25), "CZK")]))
+
+    run("--data-dir", tmp_path, "chart")
+
+    assert page(tmp_path)["wholePortfolio"]["feesPaid"] == {
+        "czk": 25,
+        "converted": [],
+        "notConverted": [],
+        "share": None,
     }
