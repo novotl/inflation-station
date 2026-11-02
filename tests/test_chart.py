@@ -755,3 +755,13 @@ def test_fees_paid_with_nothing_invested_have_no_share_of_it(tmp_path: Path) -> 
         "notConverted": [],
         "share": None,
     }
+
+
+def test_fees_paid_own_currency_sums_separate_thousands_with_a_space(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    store.add_rows(Rows(fees=[Fee(MOJE_PORTFOLIO, "f", date(2021, 6, 14), Decimal("1234.50"), "EUR")]))
+    store.add_fx_rates([FxRate(date(2021, 6, 14), "EUR", Decimal(1), "CZK", Decimal(25))])
+
+    run("--data-dir", tmp_path, "chart")
+
+    assert page(tmp_path)["wholePortfolio"]["feesPaid"]["converted"] == ["1 234.50 EUR"]
