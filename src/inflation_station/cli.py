@@ -209,6 +209,7 @@ def _report_fees_not_converted(t: Timeline) -> None:
             for f in t.fees_not_converted
         )
         click.echo(
-            f"Fees not converted to CZK (no rate on the day paid; run inflation-station fetch-fx): {fees}",
+            "Fees not converted to CZK (no ČNB rate that day: a weekend or holiday, "
+            f"or rates not fetched, so run inflation-station fetch-fx): {fees}",
             err=True,
         )

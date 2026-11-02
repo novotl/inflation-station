@@ -739,7 +739,8 @@ def test_a_non_czk_fee_shows_its_own_currency_and_one_with_no_rate_on_its_day_is
         "share": 0.3425,
     }
     assert (
-        "Fees not converted to CZK (no rate on the day paid; run inflation-station fetch-fx): "
+        "Fees not converted to CZK (no ČNB rate that day: a weekend or holiday, "
+        "or rates not fetched, so run inflation-station fetch-fx): "
         "Portu · Moje portfolio 1.00 EUR on 2021-06-13"
     ) in stderr.splitlines()
 
