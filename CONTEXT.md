@@ -33,7 +33,7 @@ Cash changed from one currency to another within a Portfolio.
 _Avoid_: forex, exchange, FX trade
 
 **Fee**:
-Money a Platform charges you, in the currency it is charged in. It is always paid from Cash, so it lowers the Value; it is never money invested. A Fee charged on a Purchase is paid from Cash just before the units are bought.
+Money a Platform charges you, in the currency it is charged in. It is always paid from Cash, so it lowers the Value; it is never money invested. A Fee charged on a Purchase is paid from Cash just before the units are bought, and also belongs to that Purchase's Holding; any other Fee (every Portu Fee) belongs to its Portfolio only.
 _Avoid_: charge, commission, poplatek
 
 **Managed Portfolio**:
@@ -65,6 +65,10 @@ What Holdings and Cash are worth in CZK on a day, at the last known fund price a
 
 **Amount invested**:
 The CZK you put in on or before a day: the Deposits.
+
+**Fees paid**:
+All the Fees paid on or before a day. Each is in the currency it was charged in, and is also converted to CZK at the ČNB rate on the day it was paid. A Holding's Fees paid are the Fees that belong to it; a Portfolio's are all its Fees, its Holdings' included.
+_Avoid_: costs, charges, total fees
 
 **Inflation hurdle**:
 What the amount invested would need to be worth on a day to keep its purchasing power, by one price index, with each Deposit grown from its own date.
