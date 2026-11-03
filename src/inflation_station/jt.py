@@ -192,7 +192,7 @@ def _purchase(row: dict[str, str]) -> _PurchaseRow:
     # A Portfolio per Fund bought in each J&T portfolio.
     portfolio = Portfolio(Platform.JT, key=f"{row[PORTFOLIO]} {fund.isin}", name=fund.name)
     day = _date(row, TRADE_DATE)
-    rows = Rows(fees=[Fee(portfolio, row[ROW_ID], day, fee, CZK)] if fee else [])
+    rows = Rows(fees=[Fee(portfolio, row[ROW_ID], day, fee, CZK, fund=fund)] if fee else [])
     # What bought the units, in CZK.
     amount = paid - fee
     if currency != CZK:

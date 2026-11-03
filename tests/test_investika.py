@@ -36,8 +36,8 @@ ISSUES = [
 ]
 # The payment less the issue's Částka: the entry fee and the rounding.
 FEES = [
-    Fee(CONTRACT, "2026-09-10T11:02:49", date(2026, 8, 31), Decimal("101.09"), "CZK"),
-    Fee(CONTRACT, "2021-05-10T16:21:05", date(2021, 4, 30), Decimal("201.50"), "CZK"),
+    Fee(CONTRACT, "2026-09-10T11:02:49", date(2026, 8, 31), Decimal("101.09"), "CZK", fund=FUND),
+    Fee(CONTRACT, "2021-05-10T16:21:05", date(2021, 4, 30), Decimal("201.50"), "CZK", fund=FUND),
 ]
 # The cash statement's deposits; identical ones on one day are told apart by their count.
 DEPOSITS = [

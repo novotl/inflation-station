@@ -64,11 +64,12 @@ def test_jt_row_with_a_fee_imports_as_the_purchase_of_its_units_plus_a_fee(tmp_p
         "CZK",
         Decimal("7768.76"),
     )
-    assert (fee.portfolio, fee.day, fee.amount, fee.currency) == (
+    assert (fee.portfolio, fee.day, fee.amount, fee.currency, fee.fund) == (
         WORLD_FUND,
         date(2021, 6, 15),
         Decimal("231.24"),
         "CZK",
+        purchase.fund,
     )
 
 
@@ -404,11 +405,12 @@ def test_investika_pair_imports_deposits_and_one_purchase_per_issue(tmp_path: Pa
         Decimal("4898.91"),
     )
     fee = next(f for f in rows.fees if f.source_row_id == "2026-09-10T11:02:49")
-    assert (fee.portfolio, fee.day, fee.amount, fee.currency) == (
+    assert (fee.portfolio, fee.day, fee.amount, fee.currency, fee.fund) == (
         issue.portfolio,
         date(2026, 8, 31),
         Decimal("101.09"),
         "CZK",
+        issue.fund,
     )
     # The Deposits cover the Purchases and Fees, and the pending payment of 01.10.2026.
     assert sorted((d.day, d.amount, d.currency) for d in rows.deposits) == [

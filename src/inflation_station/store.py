@@ -159,6 +159,8 @@ class FeeRecord(_ImportedRow):
 
     amount: Mapped[Decimal]
     currency: Mapped[str]
+    # The Fund of the Holding it belongs to; NULL when it belongs to its Portfolio only.
+    fund_id: Mapped[int | None] = mapped_column(ForeignKey("fund.id"))
 
 
 class ConversionRecord(_ImportedRow):
@@ -321,6 +323,7 @@ class Store:
                         day=f.day,
                         amount=f.amount,
                         currency=f.currency,
+                        fund_id=None if f.fund is None else fund_ids[f.fund.isin],
                     ),
                 ),
                 "Conversions": add(
@@ -445,7 +448,14 @@ class Store:
                 purchases=purchases_or_sales(PurchaseRecord, Purchase),
                 sales=purchases_or_sales(SaleRecord, Sale),
                 fees=[
-                    Fee(portfolios[r.portfolio_id], r.source_row_id, r.day, r.amount, r.currency)
+                    Fee(
+                        portfolios[r.portfolio_id],
+                        r.source_row_id,
+                        r.day,
+                        r.amount,
+                        r.currency,
+                        fund=None if r.fund_id is None else funds[r.fund_id],
+                    )
                     for r in session.scalars(select(FeeRecord).order_by(FeeRecord.id))
                 ],
                 conversions=[
@@ -515,9 +525,10 @@ def _store_portfolios(session: Session, rows: Rows) -> dict[tuple[str, str], int
 
 def _store_funds(session: Session, rows: Rows) -> dict[str, int]:
     """Store each Fund of `rows` not stored yet, rename those stored under another name, and return the id of each by
-    its ISIN."""
+    its ISIN. A Fee's Fund is named as in the Purchases and Sales of it, if `rows` has any."""
+    linked = {f.fund.isin: f.fund for f in rows.fees if f.fund is not None}
     ids = {}
-    for isin, fund in rows.funds().items():
+    for isin, fund in (linked | rows.funds()).items():
         record = session.scalars(select(FundRecord).where(FundRecord.isin == isin)).one_or_none()
         if record is None:
             record = FundRecord(isin=isin, name=fund.name)
